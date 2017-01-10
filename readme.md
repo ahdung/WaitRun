@@ -2,4 +2,4 @@
 ## WaitUI
 ## BackgroundWorkerUI
 
-![](https://github.com/ahdung/WaitRun/blob/master/ScreenShot_1.PNG)
+![](ScreenShot_1.PNG)
