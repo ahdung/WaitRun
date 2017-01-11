@@ -102,26 +102,10 @@ namespace AhDung.WinForm
             btnCancel.Click += btnCancel_Click;//注册取消按钮单击事件
         }
 
-        #region 将【取消】按钮点击、窗体关闭等行为视为触发【取消任务】事件
-
-        protected override void OnFormClosing(FormClosingEventArgs e)
-        {
-            //阻止用户关闭窗体并触发UserCancelling事件
-            //加Visible是因为调用Hide()也会触发该事件，为了避免再次OnUserCancelling为之
-            if (e.CloseReason == CloseReason.UserClosing && this.Visible)
-            {
-                e.Cancel = true;
-                CancelPending = true;
-            }
-            base.OnFormClosing(e);
-        }
-
         private void btnCancel_Click(object sender, EventArgs e)
         {
             CancelPending = true;
         }
-
-        #endregion
 
         //屏蔽窗体关闭按钮
         protected override CreateParams CreateParams
@@ -246,12 +230,6 @@ namespace AhDung.WinForm
 
         #endregion
 
-        /// <summary>
-        /// 显示模式等待窗体
-        /// </summary>
-        /// <remarks>建议使用Form类的默认实现</remarks>
-        DialogResult ShowDialog();
-
         #region Invoke相关，供客户端在跨线程操作窗体UI
 
         /// <summary>
@@ -275,9 +253,24 @@ namespace AhDung.WinForm
         #endregion
 
         /// <summary>
-        /// 隐藏窗体
+        /// 窗体首次显示时
         /// </summary>
-        void Hide();
+        event EventHandler Shown;
+
+        /// <summary>
+        /// 显示模式等待窗体
+        /// </summary>
+        /// <remarks>建议使用Form类的默认实现</remarks>
+        DialogResult ShowDialog();
+
+        /// <summary>
+        /// 关闭窗体
+        /// </summary>
+        /// <remarks>
+        /// - 建议使用Form类的默认实现
+        /// - 不建议换成Hide/Visible，或直接Dispose，因为只有Close才能正确处理焦点切换
+        /// </remarks>
+        void Close();
 
         /// <summary>
         /// 指示（用户）是否已请求取消。setter建议只用于重置状态

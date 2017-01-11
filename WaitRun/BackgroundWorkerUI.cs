@@ -1,6 +1,5 @@
 ﻿using System;
 using System.ComponentModel;
-using System.Threading;
 using System.Windows.Forms;
 
 namespace AhDung.WinForm
@@ -11,12 +10,6 @@ namespace AhDung.WinForm
     public class BackgroundWorkerUI : BackgroundWorker
     {
         readonly IWaitForm _waitForm;
-
-        //用于在等待窗体ShowDialog后伺机关闭它
-        //之所以不直接在OnRunWorkerCompleted中使用关闭，是因为该事件跑在Invoke里，
-        //这样关闭的窗体会影响窗口链，如会导致在该事件中后续弹出的模式窗体不“模式”，
-        //又或者其它程序的窗口会跳到前排来，应该是Invoke机制到底跟直接调用有所不同
-        readonly System.Windows.Forms.Timer _timer;
 
         #region 一组操作等候窗体UI的属性/方法
 
@@ -189,17 +182,6 @@ namespace AhDung.WinForm
                 throw new ArgumentNullException();
             }
             _waitForm = fmWait;
-
-            //轮询异步任务完成情况，完成后隐藏等待窗体
-            _timer = new System.Windows.Forms.Timer { Interval = 500 };
-            _timer.Tick += (S, E) =>
-            {
-                if (!IsBusy)
-                {
-                    _timer.Stop();
-                    _waitForm.Hide();
-                }
-            };
         }
 
         /// <summary>
@@ -210,16 +192,44 @@ namespace AhDung.WinForm
         public new void RunWorkerAsync(object argument = null)
         {
             _waitForm.CancelControlVisible = this.WorkerSupportsCancellation;
-            _waitForm.CancelPending = false;//应考虑该方法是可能重复进入的
+            _waitForm.CancelPending = false;//考虑该方法是可能重复进入的
 
             base.RunWorkerAsync(argument);
-            _timer.Start();
 
-            Thread.Sleep(50); //所以先给异步50ms，如果它在此时间内完成，下面就不会再弹窗
-            if (IsBusy)
+            //给异步任务一点时间，如果在此时间内完成，就不弹窗。
+            //不能用Sleep，因为异步任务完成是通过Post改IsBusy，
+            //Sleep会把Post也卡住，完了还是先走if，失去意义
+            DelayRun(50, () =>
             {
-                _waitForm.ShowDialog();
-            }
+                if (IsBusy)
+                {
+                    //这里有可能出现先把wf关了的情况，所以要吃掉这种异常
+                    try { _waitForm.ShowDialog(); }
+                    catch (ObjectDisposedException) { }
+                }
+            });
+        }
+
+        /// <summary>
+        /// 定时执行任务
+        /// </summary>
+        private static void DelayRun(int ms, Action method)
+        {
+            var t = new System.Windows.Forms.Timer { Interval = ms };
+            t.Tick += (S, E) =>
+            {
+                t.Stop();
+                GC.KeepAlive(t);
+                t.Dispose();
+                method();
+            };
+            t.Start();
+        }
+
+        protected override void OnRunWorkerCompleted(RunWorkerCompletedEventArgs e)
+        {
+            _waitForm.Close();
+            base.OnRunWorkerCompleted(e);
         }
 
         /// <summary>
@@ -230,7 +240,7 @@ namespace AhDung.WinForm
             get
             {
                 return base.CancellationPending
-                || (_waitForm != null && _waitForm.CancelPending);//公共方法需判空
+                    || _waitForm.CancelPending;
             }
         }
 
@@ -239,7 +249,6 @@ namespace AhDung.WinForm
             if (disposing)
             {
                 _waitForm.Dispose();
-                _timer.Dispose();
             }
             base.Dispose(disposing);
         }

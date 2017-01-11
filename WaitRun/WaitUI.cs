@@ -8,39 +8,21 @@ namespace AhDung.WinForm
     /// <summary>
     /// 执行任务并显示等候窗体
     /// </summary>
-    public static class WaitUI//todo 考虑在回调中操作timer
+    public static class WaitUI
     {
-        static readonly AutoResetEvent _areForWhole = new AutoResetEvent(true);//用于排斥WaitUI运行期间的其它调用请求
-        static readonly ManualResetEvent _mreForWork = new ManualResetEvent(true); //用于界定异步任务执行区间
-        static bool _isRunning;
+        //用于排斥WaitUI运行期间的其它调用请求
+        static readonly AutoResetEvent _areForWhole = new AutoResetEvent(true);
+        static bool _isRunning;   //供外部检测状态用
+        static bool _isCompleted; //指示异步任务是否完成
 
         static SynchronizationContext _syncContext;//记录异步前的线程上下文，供异步任务中调用Post
         static IWaitForm _waitForm;  //等待窗体
         static object _result;       //任务返回结果
         static Exception _exception; //任务执行异常
 
-        //用于在等待窗体ShowDialog后伺机关闭它
-        //之所以不在回调中使用Invoke处理是因为这样可能会让其他程序窗口到前排来
-        //估计是Invoke机制到底跟直接调用有所不同~对于窗口链
-        static readonly System.Windows.Forms.Timer _timer;
-
-        static object[] _parmsInput;         //调用者传入的参数
-        static ParameterInfo[] _parmsMethod; //任务所需的参数
+        static object[] _prmsInput;          //调用者传入的参数
+        static ParameterInfo[] _prmsMethod;  //任务所需的参数
         static AsyncCallback _callBackMethod;//回调方法
-
-        static WaitUI()
-        {
-            //轮询异步任务完成情况，完成后隐藏等待窗体，WaitUI结束时负责销毁
-            _timer = new System.Windows.Forms.Timer { Interval = 500 };
-            _timer.Tick += (S, E) =>
-            {
-                if (IsCompleted)
-                {
-                    _timer.Stop();
-                    if (_waitForm != null) { _waitForm.Hide(); }
-                }
-            };
-        }
 
         /// <summary>
         /// 供用户自用的属性。每次Run后会置为null
@@ -67,25 +49,9 @@ namespace AhDung.WinForm
         /// <summary>
         /// 指示WaitUI是否正在使用中
         /// </summary>
-        public static bool IsRunning
+        public static bool IsBusy
         {
-            get
-            {
-                return _isRunning;
-            }
-        }
-
-        /// <summary>
-        /// 获取或设置回调完成状态
-        /// </summary>
-        private static bool IsCompleted
-        {
-            get { return _mreForWork.WaitOne(0); }
-            set
-            {
-                if (value) { _mreForWork.Set(); }
-                else { _mreForWork.Reset(); }
-            }
+            get { return _isRunning; }
         }
 
         /// <summary>
@@ -173,7 +139,7 @@ namespace AhDung.WinForm
                 {
                     _waitForm.BeginInvoke(new Action(() => _waitForm.BarValue = value));
                 }
-                else{ _waitForm.BarValue = value;}
+                else { _waitForm.BarValue = value; }
             }
         }
 
@@ -598,26 +564,33 @@ namespace AhDung.WinForm
         /// </summary>
         public static object RunDelegate(IWaitForm fmWait, Delegate del, params object[] args)
         {
+            //利用AutoResetEvent.WaitOne的原子性，防止重入
             if (!_areForWhole.WaitOne(0)) { throw new WorkIsBusyException(); }
             _isRunning = true;
 
             try
             {
                 if (fmWait == null) { throw new ArgumentNullException("fmWait"); }
-                if (del == null || del.GetInvocationList().Length != 1) { throw new ApplicationException("委托不能为空，且只能绑定1个方法！"); }
+                if (del == null || del.GetInvocationList().Length != 1)
+                {
+                    throw new ApplicationException("委托不能为空，且只能绑定1个方法！");
+                }
                 if (args == null) { throw new ArgumentNullException("args"); }
 
                 Reset();
                 _waitForm = fmWait;//需在开始异步任务前赋值，因为异步中可能用到
+                //更新上下文为UI线程上下文，因为如果在Main中Run，先前拿到的上下文也许时null，
+                //会导致在异步完成时用Post关闭窗体抛异常
+                _waitForm.Shown += (S, E) => _syncContext = SynchronizationContext.Current;
 
-                IsCompleted = false;
                 StartAsync(del, args);
-                _timer.Start();//须在设置IsCompleted后启动
 
-                Thread.Sleep(50); //给异步一点时间，如果在此时间内完成，就不弹窗
-                if (!IsCompleted)
+                Thread.Sleep(50); //给异步任务一点时间，如果在此时间内完成，就不弹窗
+                if (!_isCompleted)
                 {
-                    _waitForm.ShowDialog();
+                    //这里有可能出现异步先把wf关了的情况，所以要吃掉这种异常
+                    try { _waitForm.ShowDialog(); }
+                    catch (ObjectDisposedException) { }
                 }
 
                 //返回
@@ -636,7 +609,7 @@ namespace AhDung.WinForm
         /// <summary>
         /// 开始异步任务
         /// </summary>
-        private static void StartAsync(Delegate del, params object[] args)
+        private static void StartAsync(Delegate del, object[] args)
         {
             MethodInfo beginInvoke = del.GetType().GetMethod("BeginInvoke");
             object[] parmsBeginInvoke = new object[beginInvoke.GetParameters().Length];
@@ -645,14 +618,14 @@ namespace AhDung.WinForm
                 throw new ArgumentException("提供的参数超过了方法所需的参数！");
             }
 
-            _parmsMethod = del.Method.GetParameters();//假定GetParameters总是返回按参数Position排序的数组，如果将来有问题，要查验这个假设
-            _parmsInput = args;
+            _prmsMethod = del.Method.GetParameters();//假定GetParameters总是返回按参数Position排序的数组，如果将来有问题，要查验这个假设
+            _prmsInput = args;
 
             //赋值BeginInvoke参数
-            _parmsInput.CopyTo(parmsBeginInvoke, 0); //塞入传入的参数
-            for (int i = _parmsInput.Length; i < _parmsMethod.Length; i++) //对未传入的参数赋予默认值
+            _prmsInput.CopyTo(parmsBeginInvoke, 0); //塞入传入的参数
+            for (int i = _prmsInput.Length; i < _prmsMethod.Length; i++) //对未传入的参数赋予默认值
             {
-                ParameterInfo p = _parmsMethod[i];
+                ParameterInfo p = _prmsMethod[i];
                 object pVal;
 
                 if ((pVal = p.DefaultValue) == DBNull.Value) //若参数不具有默认值则抛异常
@@ -681,9 +654,9 @@ namespace AhDung.WinForm
                 if (parmsEndInvoke.Length != 1)//若方法存在ref或out参数，赋值给endInvoke参数
                 {
                     int i = 0;
-                    foreach (ParameterInfo p in _parmsMethod)
+                    foreach (ParameterInfo p in _prmsMethod)
                     {
-                        if (p.ParameterType.IsByRef) { parmsEndInvoke[i++] = _parmsInput[p.Position]; }
+                        if (p.ParameterType.IsByRef) { parmsEndInvoke[i++] = _prmsInput[p.Position]; }
                     }
                 }
                 parmsEndInvoke[parmsEndInvoke.Length - 1] = ar;
@@ -693,9 +666,9 @@ namespace AhDung.WinForm
                 if (parmsEndInvoke.Length != 1)//从endInvoke参数取出值返给输入参数
                 {
                     int i = 0;
-                    foreach (ParameterInfo p in _parmsMethod)
+                    foreach (ParameterInfo p in _prmsMethod)
                     {
-                        if (p.ParameterType.IsByRef) { _parmsInput[p.Position] = parmsEndInvoke[i++]; }
+                        if (p.ParameterType.IsByRef) { _prmsInput[p.Position] = parmsEndInvoke[i++]; }
                     }
                 }
             }
@@ -709,7 +682,9 @@ namespace AhDung.WinForm
             }
             finally
             {
-                IsCompleted = true;
+                _isCompleted = true;
+                Thread.Sleep(300);//既然wf已显示，就让它正常显示一下，避免快闪
+                Post(arg => { if (_waitForm != null) { _waitForm.Close(); } }, (object)null);
             }
         }
 
@@ -720,6 +695,7 @@ namespace AhDung.WinForm
         {
             Cancelled = false;
             _exception = null;
+            _isCompleted = false;
             _syncContext = SynchronizationContext.Current;
         }
 
@@ -729,10 +705,14 @@ namespace AhDung.WinForm
         private static void Release()
         {
             Tag = null;
-            _parmsInput = null;//这里不会影响调用者传入的object[]实例，因为不是ref进来的
-            _parmsMethod = null;
-            _waitForm.Dispose();
+            _prmsInput = null;//这里不会影响调用者传入的object[]实例，因为不是ref进来的
+            _prmsMethod = null;
+
+            //先置null再慢慢dispose，因为方案中多处地方依赖null判断，
+            //就怕判断不为空时正在销毁
+            var fm = _waitForm;
             _waitForm = null;
+            fm.Dispose();
         }
     }
 

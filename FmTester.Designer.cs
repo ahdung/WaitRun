@@ -34,7 +34,7 @@
             // 
             // btnTestWaitUI
             // 
-            this.btnTestWaitUI.Location = new System.Drawing.Point(114, 52);
+            this.btnTestWaitUI.Location = new System.Drawing.Point(84, 26);
             this.btnTestWaitUI.Name = "btnTestWaitUI";
             this.btnTestWaitUI.Size = new System.Drawing.Size(175, 39);
             this.btnTestWaitUI.TabIndex = 0;
@@ -44,7 +44,7 @@
             // 
             // btnTestBackgroundWorkerUI
             // 
-            this.btnTestBackgroundWorkerUI.Location = new System.Drawing.Point(354, 52);
+            this.btnTestBackgroundWorkerUI.Location = new System.Drawing.Point(290, 26);
             this.btnTestBackgroundWorkerUI.Name = "btnTestBackgroundWorkerUI";
             this.btnTestBackgroundWorkerUI.Size = new System.Drawing.Size(175, 39);
             this.btnTestBackgroundWorkerUI.TabIndex = 1;
@@ -56,7 +56,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(642, 430);
+            this.ClientSize = new System.Drawing.Size(549, 355);
             this.Controls.Add(this.btnTestBackgroundWorkerUI);
             this.Controls.Add(this.btnTestWaitUI);
             this.Name = "FmTester";

@@ -34,7 +34,6 @@ namespace AhDung.WinForm
                     }
                     return i;
                 });
-
                 MessageBox.Show("任务完成。结果：" + result, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (WorkCancelledException)
