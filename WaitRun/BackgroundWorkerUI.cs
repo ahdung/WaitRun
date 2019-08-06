@@ -1,5 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace AhDung.WinForm
@@ -9,156 +11,194 @@ namespace AhDung.WinForm
     /// </summary>
     public class BackgroundWorkerUI : BackgroundWorker
     {
-        readonly IWaitForm _waitForm;
+        const int ShowDelay = 50; //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
+        static readonly Control ControlForInvoke; //供this.OnRunWorkerCompleted中BeginInvoke基类完成事件用
+
+        readonly Type ThisType;
+        readonly Type _typeofWaitForm;
+        Action _actionOnCompleted;
+        IWaitForm _waitForm;
+        bool _isCompleted;
+
+        static BackgroundWorkerUI()
+        {
+            ControlForInvoke = new Control();
+            ControlForInvoke.CreateControl();
+        }
 
         #region 一组操作等候窗体UI的属性/方法
 
         /// <summary>
-        /// 获取或设置进度描述
+        /// 更新UI
         /// </summary>
-        public string WorkMessage
+        void UpdateUI<T>(Action<T> action, T arg = default(T))
         {
-            set
+            if (action == null || _waitForm == null)
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.WorkMessage = value));
-                    return;
-                }
-                _waitForm.WorkMessage = value;
+                return;
             }
+
+            if (_waitForm.InvokeRequired)
+            {
+                _waitForm.Invoke(new Action<T>(v =>
+                {
+                    Application.DoEvents();
+                    action(v);
+                }), arg);
+                return;
+            }
+
+            Application.DoEvents();
+            action(arg);
         }
 
         /// <summary>
-        /// 获取或设置进度条可见性
+        /// 读取UI值
         /// </summary>
-        public bool BarVisible
+        T ReadUI<T>(Func<T> func)
         {
+            if (func == null || _waitForm == null)
+            {
+                return default(T);
+            }
+
+            if (_waitForm.InvokeRequired)
+            {
+                return (T)_waitForm.Invoke(func);
+            }
+
+            return func();
+        }
+
+        int _defaultBarMaximum;
+        /// <summary>
+        /// 获取或设置进度条上限值
+        /// </summary>
+        public int BarMaximum
+        {
+            get => ReadUI<int?>(() => _waitForm.BarMaximum) ?? _defaultBarMaximum;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
             set
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarVisible = value));
-                    return;
-                }
-                _waitForm.BarVisible = value;
+                _defaultBarMaximum = value;
+                UpdateUI(v => _waitForm.BarMaximum = v, value);
             }
         }
 
+        int _defaultBarMinimum;
         /// <summary>
-        /// 获取或设置进度条动画样式
+        /// 获取或设置进度条下限值
         /// </summary>
-        public ProgressBarStyle BarStyle
+        public int BarMinimum
         {
-            set
-            {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarStyle = value));
-                    return;
-                }
-                _waitForm.BarStyle = value;
-            }
-        }
+            get => ReadUI<int?>(() => _waitForm.BarMinimum) ?? _defaultBarMinimum;
 
-        /// <summary>
-        /// 获取或设置进度值
-        /// </summary>
-        public int BarValue
-        {
-            get
-            {
-                if (_waitForm.InvokeRequired)
-                {
-                    return Convert.ToInt32(_waitForm.Invoke(new Func<int>(() => _waitForm.BarValue)));
-                }
-                return _waitForm.BarValue;
-            }
+            [MethodImpl(MethodImplOptions.Synchronized)]
             set
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarValue = value));
-                    return;
-                }
-                _waitForm.BarValue = value;
-            }
-        }
-
-        /// <summary>
-        /// 获取或设置进度条步进值
-        /// </summary>
-        public int BarStep
-        {
-            set
-            {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarStep = value));
-                    return;
-                }
-                _waitForm.BarStep = value;
+                _defaultBarMinimum = value;
+                UpdateUI(v => _waitForm.BarMinimum = v, value);
             }
         }
 
         /// <summary>
         /// 使进度条步进
         /// </summary>
-        public void BarPerformStep()
-        {
-            if (_waitForm.InvokeRequired)
-            {
-                _waitForm.BeginInvoke(new Action(() => _waitForm.BarPerformStep()));
-                return;
-            }
-            _waitForm.BarPerformStep();
-        }
+        [MethodImpl(MethodImplOptions.Synchronized)]
+        public void BarPerformStep() => UpdateUI<object>(_ => _waitForm.BarPerformStep());
 
+        int _defaultBarStep;
         /// <summary>
-        /// 获取或设置进度条上限值
+        /// 获取或设置进度条步进值
         /// </summary>
-        public int BarMaximum
+        public int BarStep
         {
+            get => _defaultBarStep;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
             set
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarMaximum = value));
-                    return;
-                }
-                _waitForm.BarMaximum = value;
+                _defaultBarStep = value;
+                UpdateUI(v => _waitForm.BarStep = v, value);
             }
         }
 
         /// <summary>
-        /// 获取或设置进度条下限值
+        /// 获取或设置能否报告进度
         /// </summary>
-        public int BarMinimum
+        public new bool WorkerReportsProgress
         {
+            get => base.WorkerReportsProgress;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
             set
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.BarMinimum = value));
-                    return;
-                }
-                _waitForm.BarMinimum = value;
+                base.WorkerReportsProgress = value;
+                UpdateUI(v => _waitForm.BarStyle = v ? ProgressBarStyle.Continuous : ProgressBarStyle.Marquee, value);
+            }
+        }
+
+        int _defaultBarValue;
+        /// <summary>
+        /// 获取或设置进度值
+        /// </summary>
+        public int BarValue
+        {
+            get => ReadUI<int?>(() => _waitForm.BarValue) ?? _defaultBarValue;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
+            set
+            {
+                _defaultBarValue = value;
+                UpdateUI(v => _waitForm.BarValue = v, value);
+            }
+        }
+
+        bool _defaultBarVisible;
+        /// <summary>
+        /// 获取或设置进度条可见性
+        /// </summary>
+        public bool BarVisible
+        {
+            get => _defaultBarVisible;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
+            set
+            {
+                _defaultBarVisible = value;
+                UpdateUI(v => _waitForm.BarVisible = v, value);
             }
         }
 
         /// <summary>
-        /// 获取或设置取消任务的控件的可见性
+        /// 获取或设置是否支持取消
         /// </summary>
-        public bool CancelControlVisible
+        public new bool WorkerSupportsCancellation
         {
+            get => base.WorkerSupportsCancellation;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
             set
             {
-                if (_waitForm.InvokeRequired)
-                {
-                    _waitForm.BeginInvoke(new Action(() => _waitForm.CancelControlVisible = value));
-                    return;
-                }
-                _waitForm.CancelControlVisible = value;
+                base.WorkerSupportsCancellation = value;
+                UpdateUI(v => _waitForm.CancelControlVisible = v, value);
+            }
+        }
+
+        string _defaultWorkMessage;
+        /// <summary>
+        /// 获取或设置进度描述
+        /// </summary>
+        public string WorkMessage
+        {
+            get => _defaultWorkMessage;
+
+            [MethodImpl(MethodImplOptions.Synchronized)]
+            set
+            {
+                _defaultWorkMessage = value;
+                UpdateUI(v => _waitForm.WorkMessage = v, value);
             }
         }
 
@@ -168,20 +208,28 @@ namespace AhDung.WinForm
         /// 初始化组件
         /// </summary>
         public BackgroundWorkerUI()
-            : this(new WaitForm())
-        { }
+            : this(typeof(WaitForm))
+        {
+        }
 
         /// <summary>
         /// 初始化组件并指定等待窗体
         /// </summary>
-        /// <param name="fmWait">等待窗体</param>
-        public BackgroundWorkerUI(IWaitForm fmWait)
+        /// <param name="typeofWaitForm">等待窗体类型</param>
+        public BackgroundWorkerUI(Type typeofWaitForm)
         {
-            if (fmWait == null)
+            if (typeofWaitForm == null)
             {
                 throw new ArgumentNullException();
             }
-            _waitForm = fmWait;
+
+            if (!typeof(IWaitForm).IsAssignableFrom(typeofWaitForm))
+            {
+                throw new ArgumentException("typeofWaitForm必须是实现IWaitForm的类型！");
+            }
+
+            _typeofWaitForm = typeofWaitForm;
+            ThisType = GetType();
         }
 
         /// <summary>
@@ -191,64 +239,110 @@ namespace AhDung.WinForm
         /// <remarks>通过可选参数可以同时覆盖基类无参RunWorkerAsync</remarks>
         public new void RunWorkerAsync(object argument = null)
         {
-            _waitForm.CancelControlVisible = this.WorkerSupportsCancellation;
-            _waitForm.CancelPending = false;//考虑该方法是可能重复进入的
+            //执行任务前初始化状态
+            InitializeStates();
 
             base.RunWorkerAsync(argument);
 
-            //给异步任务一点时间，如果在此时间内完成，就不弹窗。
-            //不能用Sleep，因为异步任务完成是通过Post改IsBusy，
-            //Sleep会把Post也卡住，完了还是先走if，失去意义
-            DelayRun(50, () =>
+            //先等候任务执行一段时间
+            Thread.Sleep(ShowDelay);
+
+            if (IsBusy)
             {
-                if (IsBusy)
-                {
-                    //这里有可能出现先把wf关了的情况，所以要吃掉这种异常
-                    try { _waitForm.ShowDialog(); }
-                    catch (ObjectDisposedException) { }
-                }
-            });
+                CreateAndShowForm(_typeofWaitForm, () =>
+                    {
+                        //这里的逻辑是，如果任务已跑完就立即关闭等待窗体，否则注册委托，this.OnRunWorkerCompleted中负责调用
+                        //这里不用上锁，因为修改_isCompleted的this.OnRunWorkerCompleted也是在UI线程执行
+                        if (_isCompleted)
+                        {
+                            CloseForm();
+                        }
+                        else
+                        {
+                            _actionOnCompleted = CloseForm;
+                        }
+                    }, CancelAsync);
+            }
         }
 
         /// <summary>
-        /// 定时执行任务
+        /// 创建并显示窗体
         /// </summary>
-        private static void DelayRun(int ms, Action method)
+        /// <param name="typeofWaitForm">等待窗体类型</param>
+        /// <param name="actionOnShown">当窗体显示后的动作</param>
+        /// <param name="actionOnCancellationRequested">当用户请求取消时的动作</param>
+        void CreateAndShowForm(Type typeofWaitForm, Action actionOnShown, Action actionOnCancellationRequested)
         {
-            var t = new System.Windows.Forms.Timer { Interval = ms };
-            t.Tick += (S, E) =>
+            Monitor.Enter(ThisType);
+            try
             {
-                t.Stop();
-                GC.KeepAlive(t);
-                t.Dispose();
-                method();
-            };
-            t.Start();
+                var form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
+                form.BarValue = BarValue; //Value放前面很重要，因为任务可能先确定Max/Min，Value放后面可能触发超出范围异常
+                form.BarMaximum = BarMaximum;
+                form.BarMinimum = BarMinimum;
+                form.BarStep = BarStep;
+                form.BarStyle = WorkerReportsProgress ? ProgressBarStyle.Continuous : ProgressBarStyle.Marquee;
+                form.BarVisible = BarVisible;
+                form.CancelControlVisible = WorkerSupportsCancellation;
+                form.WorkMessage = WorkMessage;
+
+                form.CancellationRequested += (_, __) => actionOnCancellationRequested?.Invoke();
+                form.Shown += (_, __) =>
+                {
+                    Monitor.Exit(ThisType);
+                    actionOnShown?.Invoke();
+                };
+
+                (_waitForm = form).ShowDialog();
+            }
+            catch
+            {
+                Monitor.Exit(ThisType);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 关闭窗体
+        /// </summary>
+        void CloseForm() => _waitForm.Close();
+
+        /// <summary>
+        /// 初始化若干状态字段。需在任务开始前调用
+        /// </summary>
+        void InitializeStates()
+        {
+            _actionOnCompleted = null;
+            _isCompleted = false;
+            _waitForm = null;
+
+            _defaultBarMaximum = 100;
+            _defaultBarMinimum = 0;
+            _defaultBarStep = 1;
+            _defaultBarValue = 0;
+            _defaultBarVisible = true;
+            _defaultWorkMessage = "正在处理，请稍候...";
         }
 
         protected override void OnRunWorkerCompleted(RunWorkerCompletedEventArgs e)
         {
-            _waitForm.Close();
-            base.OnRunWorkerCompleted(e);
-        }
+            _isCompleted = true;
+            _actionOnCompleted?.Invoke();
 
-        /// <summary>
-        /// 指示是否已请求取消任务
-        /// </summary>
-        public new bool CancellationPending
-        {
-            get
-            {
-                return base.CancellationPending
-                    || _waitForm.CancelPending;
-            }
+            //这里必须用有句柄的控件的BeginInvoke，来跑完成事件，才能：
+            // 1、避免等待窗体受完成事件中的阻塞代码影响。比如完成事件中会弹出模式窗体（如消息框）的话，那等待窗体就会等模式窗体关闭后才会关闭
+            // 2、完成事件中产生的异常不会传染到等待窗体的Shown事件
+
+            //用UI线程的同步上下文Post是不行的，Post内部用的是MarshalControl的BeginInvoke，
+            //会导致问题1。原因不明，这也说明Control.BeginInvoke与MarshalControl.BeginInvoke有区别
+            ControlForInvoke.BeginInvoke(new Action<RunWorkerCompletedEventArgs>(base.OnRunWorkerCompleted), e);
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                _waitForm.Dispose();
+                _waitForm?.Dispose();
             }
             base.Dispose(disposing);
         }

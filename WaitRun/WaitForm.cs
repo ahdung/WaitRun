@@ -9,6 +9,11 @@ namespace AhDung.WinForm
     ///<remarks>IWaitForm的默认实现</remarks>
     public class WaitForm : Form, IWaitForm
     {
+        #region Windows Form Designer generated code
+
+        // ReSharper disable RedundantNameQualifier
+        // ReSharper disable ArrangeThisQualifier
+
         /// <summary>
         /// Required designer variable.
         /// </summary>
@@ -20,14 +25,12 @@ namespace AhDung.WinForm
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null))
+            if (disposing)
             {
-                components.Dispose();
+                components?.Dispose();
             }
             base.Dispose(disposing);
         }
-
-        #region Windows Form Designer generated code
 
         /// <summary>
         /// Required method for Designer support - do not modify
@@ -54,7 +57,6 @@ namespace AhDung.WinForm
             this.bar.Name = "bar";
             this.bar.Step = 1;
             this.bar.Size = new System.Drawing.Size(384, 16);
-            this.bar.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
             this.bar.TabIndex = 1;
             // 
             // btnCancel
@@ -65,7 +67,6 @@ namespace AhDung.WinForm
             this.btnCancel.TabIndex = 2;
             this.btnCancel.Text = "取消";
             this.btnCancel.UseVisualStyleBackColor = true;
-            this.btnCancel.Visible = false;
             // 
             // WaitForm
             // 
@@ -84,27 +85,19 @@ namespace AhDung.WinForm
             this.ResumeLayout(false);
         }
 
-        #endregion
-
         System.Windows.Forms.Label lbMsg;
         System.Windows.Forms.Button btnCancel;
         System.Windows.Forms.ProgressBar bar;
 
-        /// <summary>
-        /// 用户已请求取消
-        /// </summary>
-        public bool CancelPending { get; set; }
+        // ReSharper restore ArrangeThisQualifier
+        // ReSharper restore RedundantNameQualifier
+
+        #endregion
 
         public WaitForm()
         {
             InitializeComponent();
-
-            btnCancel.Click += btnCancel_Click;//注册取消按钮单击事件
-        }
-
-        private void btnCancel_Click(object sender, EventArgs e)
-        {
-            CancelPending = true;
+            btnCancel.Click += (_, __) => CancellationRequested?.Invoke(this, EventArgs.Empty);
         }
 
         //屏蔽窗体关闭按钮
@@ -112,7 +105,7 @@ namespace AhDung.WinForm
         {
             get
             {
-                CreateParams prms = base.CreateParams;
+                var prms = base.CreateParams;
                 prms.ClassStyle |= 0x200;
                 return prms;
             }
@@ -120,50 +113,56 @@ namespace AhDung.WinForm
 
         #region 实现接口
 
-        public string WorkMessage
-        {
-            set { lbMsg.Text = value; }
-        }
-
-        public bool BarVisible
-        {
-            set { bar.Visible = value; }
-        }
-
-        public ProgressBarStyle BarStyle
-        {
-            set { bar.Style = value; }
-        }
-
-        public int BarValue
-        {
-            get { return bar.Value; }
-            set { bar.Value = value; }
-        }
-
-        public int BarStep
-        {
-            set { bar.Step = value; }
-        }
-
-        public void BarPerformStep()
-        {
-            bar.PerformStep();
-        }
-
-        public bool CancelControlVisible
-        {
-            set { btnCancel.Visible = value; }
-        }
+        public event EventHandler CancellationRequested;
 
         public int BarMaximum
         {
-            set { bar.Maximum = value; }
+            get => bar.Maximum;
+            set => bar.Maximum = value;
         }
 
         public int BarMinimum
         {
-            set { bar.Minimum = value; }
+            get => bar.Minimum;
+            set => bar.Minimum = value;
+        }
+
+        public void BarPerformStep() => bar.PerformStep();
+
+        public int BarStep
+        {
+            get => bar.Step;
+            set => bar.Step = value;
+        }
+
+        public ProgressBarStyle BarStyle
+        {
+            get => bar.Style;
+            set => bar.Style = value;
+        }
+
+        public int BarValue
+        {
+            get => bar.Value;
+            set => bar.Value = value;
+        }
+
+        public bool BarVisible
+        {
+            get => bar.Visible;
+            set => bar.Visible = value;
+        }
+
+        public bool CancelControlVisible
+        {
+            get => btnCancel.Visible;
+            set => btnCancel.Visible = value;
+        }
+
+        public string WorkMessage
+        {
+            get => lbMsg.Text;
+            set => lbMsg.Text = value;
         }
 
         #endregion
@@ -177,22 +176,32 @@ namespace AhDung.WinForm
         #region 用于操作等待窗体UI表现的属性和方法，实现时不用操心线程问题，让客户端（任务执行器）去操心
 
         /// <summary>
-        /// 获取或设置进度描述
+        /// 获取或设置进度条的值上限
         /// </summary>
-        /// <remarks>建议默认值为“请稍候...”之类的字眼</remarks>
-        string WorkMessage { set; }
+        /// <remarks>建议默认值为100</remarks>
+        int BarMaximum { get; set; }
 
         /// <summary>
-        /// 获取或设置进度条的可见性
+        /// 获取或设置进度条的值下限
         /// </summary>
-        /// <remarks>建议默认值为true</remarks>
-        bool BarVisible { set; }
+        /// <remarks>建议默认值为0</remarks>
+        int BarMinimum { get; set; }
+
+        /// <summary>
+        /// 使进度条步进
+        /// </summary>
+        void BarPerformStep();
+
+        /// <summary>
+        /// 获取或设置进度条的步进幅度
+        /// </summary>
+        int BarStep { get; set; }
 
         /// <summary>
         /// 获取或设置进度条的动画样式
         /// </summary>
         /// <remarks>建议默认值为Marquee</remarks>
-        ProgressBarStyle BarStyle { set; }
+        ProgressBarStyle BarStyle { get; set; }
 
         /// <summary>
         /// 获取或设置进度条的值
@@ -201,32 +210,22 @@ namespace AhDung.WinForm
         int BarValue { get; set; }
 
         /// <summary>
-        /// 获取或设置进度条的步进幅度
+        /// 获取或设置进度条的可见性
         /// </summary>
-        int BarStep { set; }
-
-        /// <summary>
-        /// 使进度条步进
-        /// </summary>
-        void BarPerformStep();
+        /// <remarks>建议默认值为true</remarks>
+        bool BarVisible { get; set; }
 
         /// <summary>
         /// 获取或设置取消任务的控件的可见性
         /// </summary>
         /// <remarks>建议默认值为false</remarks>
-        bool CancelControlVisible { set; }
+        bool CancelControlVisible { get; set; }
 
         /// <summary>
-        /// 获取或设置进度条的值上限
+        /// 获取或设置进度描述
         /// </summary>
-        /// <remarks>建议默认值为100</remarks>
-        int BarMaximum { set; }
-
-        /// <summary>
-        /// 获取或设置进度条的值下限
-        /// </summary>
-        /// <remarks>建议默认值为0</remarks>
-        int BarMinimum { set; }
+        /// <remarks>建议默认值为“请稍候...”之类的字眼</remarks>
+        string WorkMessage { get; set; }
 
         #endregion
 
@@ -242,20 +241,9 @@ namespace AhDung.WinForm
         /// 窗体Invoke方法
         /// </summary>
         /// <remarks>建议使用Form类的默认实现</remarks>
-        object Invoke(Delegate method);
-
-        /// <summary>
-        /// 窗体BeginInvoke方法
-        /// </summary>
-        /// <remarks>建议使用Form类的默认实现</remarks>
-        IAsyncResult BeginInvoke(Delegate method);
+        object Invoke(Delegate method, params object[] args);
 
         #endregion
-
-        /// <summary>
-        /// 窗体首次显示时
-        /// </summary>
-        event EventHandler Shown;
 
         /// <summary>
         /// 显示模式等待窗体
@@ -264,17 +252,20 @@ namespace AhDung.WinForm
         DialogResult ShowDialog();
 
         /// <summary>
-        /// 关闭窗体
+        /// 当窗体首次显示后
         /// </summary>
-        /// <remarks>
-        /// - 建议使用Form类的默认实现
-        /// - 不建议换成Hide/Visible，或直接Dispose，因为只有Close才能正确处理焦点切换
-        /// </remarks>
-        void Close();
+        event EventHandler Shown;
 
         /// <summary>
-        /// 指示（用户）是否已请求取消。setter建议只用于重置状态
+        /// 当用户请求取消
         /// </summary>
-        bool CancelPending { get; set; }
+        event EventHandler CancellationRequested;
+
+        // 建议使用Form类的默认实现
+        // 不建议换成Hide/Visible，或直接Dispose，因为只有Close才能正确处理焦点切换
+        /// <summary>
+        /// 关闭窗体
+        /// </summary>
+        void Close();
     }
 }
