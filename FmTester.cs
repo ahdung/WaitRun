@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace AhDung.WinForm
@@ -13,41 +14,8 @@ namespace AhDung.WinForm
 
         private void btnTestWaitUI_Click(object sender, EventArgs e)
         {
-            //var form = new Form();
-            //form.Shown += (_, __) =>
-            //{
-            //    var timer = new System.Windows.Forms.Timer { Interval = 1000 };
-            //    timer.Tick += (x, xx) =>
-            //    {
-            //        timer.Stop();
-            //        GC.KeepAlive(timer);
-            //        timer.Dispose();
-
-            //        form.Close();
-
-            //        //Application.DoEvents(); // no effect 
-
-            //        // it will cause form keep show
-            //        //MessageBox.Show("asdf");
-
-            //        SynchronizationContext.Current.Post(xxx => MessageBox.Show("asdf"), null);
-
-            //        // but if this, it's work
-            //        //BeginInvoke(new Action(() => MessageBox.Show("asdf")));
-            //    };
-            //    timer.Start();
-            //};
-
-            //form.ShowDialog();
-
-            ////MessageBox.Show("asdf");
-
-            //return;
-
             try
             {
-                // 如果是.net4.5+或.net4.0 with Microsoft.Bcl.Async，可以Run异步任务，如：
-                // var result = WaitUI.Run(async () =>
                 var result = WaitUI.Run(() =>
                 {
                     WaitUI.CanBeCanceled = true;
@@ -61,7 +29,12 @@ namespace AhDung.WinForm
                         WaitUI.WorkMessage = $"正在XXX，已处理 {i}...";
                         WaitUI.BarValue = i;
 
-                        // await Task.Delay(30);
+                        //测试异常
+                        //if (i == 30)
+                        //{
+                        //    throw new FormatException("test");
+                        //}
+
                         Thread.Sleep(30);
                     }
 
@@ -142,6 +115,73 @@ namespace AhDung.WinForm
             else
             {
                 MessageBox.Show("任务完成。结果：" + e.Result, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void btnTestAsync_Click(object sender, EventArgs e)
+        {
+            var btn = (Button)sender;
+            var tag = Convert.ToInt32(btn.Tag);
+            var force = btn == button2 || btn == button3;
+
+            Async.Run(arg =>
+                {
+                    Thread.Sleep(1000);
+                    return arg;
+                }, tag,
+                () =>
+                {
+                    btn.Enabled = false;
+                    btn.Text = "Processing...";
+                },
+                (c, ex, r) =>
+                {
+                    btn.Enabled = true;
+                    btn.Text = $"Result：{r}";
+                }
+                , force);
+        }
+
+        private void btnTestWaitUIEx_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var result = WaitUI.Run(async token =>
+                {
+                    WaitUI.BarStyle = ProgressBarStyle.Blocks;
+
+                    int i;
+                    for (i = 0; i < 100; i++)
+                    {
+                        token.ThrowIfCancellationRequested();
+
+                        //也可以这样取消
+                        //WaitUI.ThrowIfCancellationRequested();
+
+                        WaitUI.WorkMessage = $"正在XXX，已处理 {i}...";
+                        WaitUI.BarValue = i;
+
+                        //测试异常
+                        //if (i == 30)
+                        //{
+                        //    throw new FormatException("test");
+                        //}
+
+                        await TaskEx.Delay(30, token);
+                    }
+
+                    return i;
+                });
+
+                MessageBox.Show("任务完成。结果：" + result, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (WorkCanceledException)
+            {
+                MessageBox.Show("任务已取消", "取消", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString(), "出错", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -7,12 +8,11 @@ using System.Windows.Forms;
 namespace AhDung.WinForm
 {
     /// <summary>
-    /// 带等待窗体的BackgroundWorker。报告进度用一组UI操作方法
+    /// 带等待窗体的BackgroundWorker
     /// </summary>
     public class BackgroundWorkerUI : BackgroundWorker
     {
         const int ShowDelay = 50; //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
-        static readonly Control ControlForInvoke; //供this.OnRunWorkerCompleted中BeginInvoke基类完成事件用
 
         readonly Type ThisType;
         readonly Type _typeofWaitForm;
@@ -20,10 +20,23 @@ namespace AhDung.WinForm
         IWaitForm _waitForm;
         bool _isCompleted;
 
-        static BackgroundWorkerUI()
+        //供this.OnRunWorkerCompleted中BeginInvoke基类完成事件用
+        static Control _marshalingControl;
+        /// <summary>
+        /// 消息控件
+        /// </summary>
+        static Control MarshalingControl
         {
-            ControlForInvoke = new Control();
-            ControlForInvoke.CreateControl();
+            get
+            {
+                if (_marshalingControl == null)
+                {
+                    var type = Assembly.GetAssembly(typeof(Application)).GetType("System.Windows.Forms.Application+MarshalingControl");
+                    _marshalingControl = (Control)Activator.CreateInstance(type, true);
+                }
+
+                return _marshalingControl;
+            }
         }
 
         #region 一组操作等候窗体UI的属性/方法
@@ -333,9 +346,10 @@ namespace AhDung.WinForm
             // 1、避免等待窗体受完成事件中的阻塞代码影响。比如完成事件中会弹出模式窗体（如消息框）的话，那等待窗体就会等模式窗体关闭后才会关闭
             // 2、完成事件中产生的异常不会传染到等待窗体的Shown事件
 
-            //用UI线程的同步上下文Post是不行的，Post内部用的是MarshalControl的BeginInvoke，
-            //会导致问题1。原因不明，这也说明Control.BeginInvoke与MarshalControl.BeginInvoke有区别
-            ControlForInvoke.BeginInvoke(new Action<RunWorkerCompletedEventArgs>(base.OnRunWorkerCompleted), e);
+            //用UI线程的同步上下文Post是不行的，这里有个很蹊跷的事情，Post内部用的也是MarshalingControl，准确来说是用的
+            //Application+ThreadContext.FromCurrent().MarshalingControl，getter也是直接new MarshalingControl()，按道理跟用反射
+            //实例化一个MarshalingControl并无不同，但偏偏前者就是存在1的问题，后者则不会。
+            MarshalingControl.BeginInvoke(new Action<RunWorkerCompletedEventArgs>(base.OnRunWorkerCompleted), e);
         }
 
         protected override void Dispose(bool disposing)

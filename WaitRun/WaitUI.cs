@@ -12,7 +12,7 @@ namespace AhDung.WinForm
      */
 
     /// <summary>
-    /// 执行任务并显示等候窗体
+    /// 执行任务并显示等候窗体。取消任务统一抛出 <see cref="WorkCanceledException"/>，而不是TaskCanceledException
     /// </summary>
     public static partial class WaitUI
     {
@@ -28,6 +28,7 @@ namespace AhDung.WinForm
         /// <summary>
         /// 若已请求取消就抛出任务取消异常
         /// </summary>
+        /// <exception cref="WorkCanceledException"/>
         public static void ThrowIfCancellationRequested()
         {
             if (IsCancellationRequested)
@@ -464,7 +465,7 @@ namespace AhDung.WinForm
             if (!task.IsCompleted)
             {
                 //若任务尚未完成，则创建和显示窗体，一直到显示后或发生异常才会释放锁，
-                //确保在此期间阻塞来自任务线程的ReadUI/UpdateUI，
+                //确保在此期间阻塞来自任务线程的UpdateUI，
                 //任务完成后的后续操作会在窗体成功显示后才会注册，以此确保 创建 > 显示 > 关闭 的顺序
                 CreateAndShowForm(
                     typeofWaitForm,
@@ -539,21 +540,6 @@ namespace AhDung.WinForm
         }
 
         /// <summary>
-        /// 入参检查。为 <see langword="null"/> 抛 <see cref="ArgumentNullException"/>
-        /// </summary>
-        /// <exception cref="ArgumentNullException"/>
-        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
-        static void ThrowIfArgumentNull(object value, string paramName = null)
-        {
-            if (value == null)
-            {
-                throw paramName == null
-                    ? new ArgumentNullException()
-                    : new ArgumentNullException(paramName);
-            }
-        }
-
-        /// <summary>
         /// 仿TPL的简易任务类
         /// </summary>
         private class SimpleTask
@@ -561,7 +547,7 @@ namespace AhDung.WinForm
             readonly Delegate _del;
             readonly object[] _args;
 
-            SimpleTask _continuationAction;
+            SimpleTask _continuationTask;
             SynchronizationContext _continuationContext;
 
             bool _isStarted;
@@ -662,7 +648,7 @@ namespace AhDung.WinForm
                             IsCompleted = true;
                         }
 
-                        _continuationAction?.Start(_continuationContext);
+                        _continuationTask?.Start(_continuationContext);
                     }
                 }
             }
@@ -688,10 +674,10 @@ namespace AhDung.WinForm
                     return Run(continuationAction, new object[] { this }, context);
                 }
 
-                _continuationAction = new SimpleTask(continuationAction, new object[] { this });
+                _continuationTask = new SimpleTask(continuationAction, new object[] { this });
                 _continuationContext = context;
                 Monitor.Exit(this);
-                return _continuationAction;
+                return _continuationTask;
             }
 
             /// <summary>
