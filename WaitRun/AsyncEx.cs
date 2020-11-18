@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 namespace AhDung.WinForm
 {
     //本部分用于.net40+
+	//todo 还没写好
     public static partial class Async
     {
         //static readonly Dictionary<Task,>

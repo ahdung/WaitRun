@@ -12,11 +12,11 @@ namespace AhDung.WinForm
      */
 
     /// <summary>
-    /// 执行任务并显示等候窗体。取消任务统一抛出 <see cref="WorkCanceledException"/>，而不是TaskCanceledException
+    /// 执行任务并显示等候窗体。取消任务统一抛出 <see cref="OperationCanceledException"/>，而不是TaskCanceledException
     /// </summary>
     public static partial class WaitUI
     {
-        const int ShowDelay = 50;                       //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
+        const int ShowDelay = 100;                      //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
         static readonly Type ThisType = typeof(WaitUI); //本类Type，供同步锁定用
         static IWaitForm _waitForm;                     //等待窗体
 
@@ -28,12 +28,12 @@ namespace AhDung.WinForm
         /// <summary>
         /// 若已请求取消就抛出任务取消异常
         /// </summary>
-        /// <exception cref="WorkCanceledException"/>
+        /// <exception cref="OperationCanceledException"/>
         public static void ThrowIfCancellationRequested()
         {
             if (IsCancellationRequested)
             {
-                throw new WorkCanceledException();
+                throw new OperationCanceledException();
             }
         }
 
@@ -487,9 +487,10 @@ namespace AhDung.WinForm
         static void CreateAndShowForm(Type typeofWaitForm, Action actionOnShown, Action actionOnCancellationRequested)
         {
             Monitor.Enter(ThisType);
+            IWaitForm form = null;
             try
             {
-                var form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
+                form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
                 form.BarValue = BarValue; //Value放前面很重要，因为任务可能先确定Max/Min，Value放后面可能触发超出范围异常
                 form.BarMaximum = BarMaximum;
                 form.BarMinimum = BarMinimum;
@@ -503,6 +504,7 @@ namespace AhDung.WinForm
                 form.Shown += (_, __) =>
                 {
                     Monitor.Exit(ThisType);
+                    Application.DoEvents();
                     actionOnShown?.Invoke();
                 };
 
@@ -512,6 +514,14 @@ namespace AhDung.WinForm
             {
                 Monitor.Exit(ThisType);
                 throw;
+            }
+            finally
+            {
+                _waitForm = null;
+
+                //必须释放，因为form是以模式打开的，Close只会隐藏。而且释放只能在这种地方，
+                //放到CloseForm中的话，是由SynchronizationContext.Post跑，存在焦点问题
+                form?.Dispose();
             }
         }
 
@@ -527,7 +537,6 @@ namespace AhDung.WinForm
         static void InitializeStates()
         {
             IsCancellationRequested = false;
-            _waitForm = null;
 
             _defaultBarMaximum = 100;
             _defaultBarMinimum = 0;
@@ -577,7 +586,7 @@ namespace AhDung.WinForm
             /// <summary>
             /// 获取任务结果。若任务被取消或出错，获取结果时会抛异常
             /// </summary>
-            /// <exception cref="WorkCanceledException"/>
+            /// <exception cref="OperationCanceledException"/>
             /// <exception cref="System.Exception"/>
             public object Result
             {
@@ -585,7 +594,7 @@ namespace AhDung.WinForm
                 {
                     if (IsCanceled)
                     {
-                        throw new WorkCanceledException();
+                        throw new OperationCanceledException();
                     }
 
                     if (Exception != null)
@@ -632,7 +641,7 @@ namespace AhDung.WinForm
                     {
                         Result = _del.DynamicInvoke(_args);
                     }
-                    catch (TargetInvocationException ex) when (ex.InnerException is WorkCanceledException)
+                    catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
                     {
                         IsCanceled = true;
                     }
@@ -690,13 +699,5 @@ namespace AhDung.WinForm
                 return task;
             }
         }
-    }
-
-    /// <summary>
-    /// 任务被取消异常
-    /// </summary>
-    public class WorkCanceledException : Exception
-    {
-        public WorkCanceledException() : base("任务已被取消！") { }
     }
 }

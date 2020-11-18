@@ -12,7 +12,7 @@ namespace AhDung.WinForm
     /// </summary>
     public class BackgroundWorkerUI : BackgroundWorker
     {
-        const int ShowDelay = 50; //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
+        const int ShowDelay = 100; //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
 
         readonly Type ThisType;
         readonly Type _typeofWaitForm;
@@ -263,18 +263,18 @@ namespace AhDung.WinForm
             if (IsBusy)
             {
                 CreateAndShowForm(_typeofWaitForm, () =>
+                {
+                    //这里的逻辑是，如果任务已跑完就立即关闭等待窗体，否则注册委托，this.OnRunWorkerCompleted中负责调用
+                    //这里不用上锁，因为修改_isCompleted的this.OnRunWorkerCompleted也是在UI线程执行
+                    if (_isCompleted)
                     {
-                        //这里的逻辑是，如果任务已跑完就立即关闭等待窗体，否则注册委托，this.OnRunWorkerCompleted中负责调用
-                        //这里不用上锁，因为修改_isCompleted的this.OnRunWorkerCompleted也是在UI线程执行
-                        if (_isCompleted)
-                        {
-                            CloseForm();
-                        }
-                        else
-                        {
-                            _actionOnCompleted = CloseForm;
-                        }
-                    }, CancelAsync);
+                        CloseForm();
+                    }
+                    else
+                    {
+                        _actionOnCompleted = CloseForm;
+                    }
+                }, CancelAsync);
             }
         }
 
@@ -287,9 +287,10 @@ namespace AhDung.WinForm
         void CreateAndShowForm(Type typeofWaitForm, Action actionOnShown, Action actionOnCancellationRequested)
         {
             Monitor.Enter(ThisType);
+            IWaitForm form = null;
             try
             {
-                var form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
+                form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
                 form.BarValue = BarValue; //Value放前面很重要，因为任务可能先确定Max/Min，Value放后面可能触发超出范围异常
                 form.BarMaximum = BarMaximum;
                 form.BarMinimum = BarMinimum;
@@ -303,6 +304,7 @@ namespace AhDung.WinForm
                 form.Shown += (_, __) =>
                 {
                     Monitor.Exit(ThisType);
+                    Application.DoEvents();
                     actionOnShown?.Invoke();
                 };
 
@@ -312,6 +314,11 @@ namespace AhDung.WinForm
             {
                 Monitor.Exit(ThisType);
                 throw;
+            }
+            finally
+            {
+                _waitForm = null;
+                form?.Dispose();
             }
         }
 
@@ -327,7 +334,6 @@ namespace AhDung.WinForm
         {
             _actionOnCompleted = null;
             _isCompleted = false;
-            _waitForm = null;
 
             _defaultBarMaximum = 100;
             _defaultBarMinimum = 0;
@@ -350,15 +356,6 @@ namespace AhDung.WinForm
             //Application+ThreadContext.FromCurrent().MarshalingControl，getter也是直接new MarshalingControl()，按道理跟用反射
             //实例化一个MarshalingControl并无不同，但偏偏前者就是存在1的问题，后者则不会。
             MarshalingControl.BeginInvoke(new Action<RunWorkerCompletedEventArgs>(base.OnRunWorkerCompleted), e);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _waitForm?.Dispose();
-            }
-            base.Dispose(disposing);
         }
     }
 }

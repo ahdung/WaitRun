@@ -127,9 +127,9 @@
             this.btnTestWaitUIEx.Name = "btnTestWaitUIEx";
             this.btnTestWaitUIEx.Size = new System.Drawing.Size(141, 39);
             this.btnTestWaitUIEx.TabIndex = 0;
-            this.btnTestWaitUIEx.Text = "WaitUI Ex";
+            this.btnTestWaitUIEx.Text = "WaitUI Async";
             this.btnTestWaitUIEx.UseVisualStyleBackColor = true;
-            this.btnTestWaitUIEx.Click += new System.EventHandler(this.btnTestWaitUIEx_Click);
+            this.btnTestWaitUIEx.Click += new System.EventHandler(this.btnTestWaitUIAsync_Click);
             // 
             // FmTester
             // 

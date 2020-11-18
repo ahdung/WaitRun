@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 
-namespace AhDung.WinForm
+namespace AhDung
 {
     /// <summary>
     /// 异步运行类。适合不用阻塞后续代码，但同时又涉及UI更新的独立任务
@@ -108,7 +108,7 @@ namespace AhDung.WinForm
                 {
                     result = del.DynamicInvoke(args);
                 }
-                catch (TargetInvocationException ex) when (ex.InnerException is WorkCanceledException)
+                catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
                 {
                     isCanceled = true;
                 }

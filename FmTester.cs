@@ -20,8 +20,8 @@ namespace AhDung.WinForm
                 {
                     WaitUI.CanBeCanceled = true;
                     WaitUI.BarStyle = ProgressBarStyle.Blocks;
-
-                    int i;
+                    //Thread.Sleep(120);
+                    int i = 0;
                     for (i = 0; i < 100; i++)
                     {
                         WaitUI.ThrowIfCancellationRequested();
@@ -41,9 +41,9 @@ namespace AhDung.WinForm
                     return i;
                 });
 
-                MessageBox.Show("任务完成。结果：" + result, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("任务完成。结果：" + result, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (WorkCanceledException)
+            catch (OperationCanceledException)
             {
                 MessageBox.Show("任务已取消", "取消", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -142,7 +142,7 @@ namespace AhDung.WinForm
                 , force);
         }
 
-        private void btnTestWaitUIEx_Click(object sender, EventArgs e)
+        private void btnTestWaitUIAsync_Click(object sender, EventArgs e)
         {
             try
             {
@@ -175,7 +175,7 @@ namespace AhDung.WinForm
 
                 MessageBox.Show("任务完成。结果：" + result, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (WorkCanceledException)
+            catch (OperationCanceledException)
             {
                 MessageBox.Show("任务已取消", "取消", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }

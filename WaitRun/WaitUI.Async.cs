@@ -88,7 +88,7 @@ namespace AhDung.WinForm
 
                 if (task.IsCanceled)
                 {
-                    throw new WorkCanceledException();
+                    throw new OperationCanceledException();
                 }
 
                 if (task.IsFaulted)
@@ -101,7 +101,7 @@ namespace AhDung.WinForm
                     return ((Task<TResult>)task).Result;
                 }
 
-                return default(TResult);
+                return default;
             }
             finally
             {
