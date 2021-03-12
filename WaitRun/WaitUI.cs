@@ -14,11 +14,16 @@ namespace AhDung.WinForm
     /// <summary>
     /// 执行任务并显示等候窗体。取消任务统一抛出 <see cref="OperationCanceledException"/>，而不是TaskCanceledException
     /// </summary>
+    /// <remarks>
+    /// 说明：<br/>
+    /// - Run方法组可执行Action和Func，有传入自定义等候窗体(waitFormType)，和初始化工作消息(message)的重载<br/>
+    /// - RunDelegate方法组是更底层的实现，当Run无法满足时（如参数数量超出、想初始化更多状态）可选用
+    /// </remarks>
     public static partial class WaitUI
     {
-        const int ShowDelay = 100;                      //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
+        const int ShowDelay = 100; //延迟启动等待窗体的时间（毫秒），也就是说如果任务能在这个时间内跑完，就不劳驾窗体出面了
         static readonly Type ThisType = typeof(WaitUI); //本类Type，供同步锁定用
-        static IWaitForm _waitForm;                     //等待窗体
+        static IWaitForm _waitForm; //等待窗体
 
         /// <summary>
         /// 指示用户是否已请求取消任务
@@ -97,6 +102,7 @@ namespace AhDung.WinForm
         }
 
         static int _defaultBarMaximum;
+
         /// <summary>
         /// 获取或设置进度条上限值
         /// </summary>
@@ -113,6 +119,7 @@ namespace AhDung.WinForm
         }
 
         static int _defaultBarMinimum;
+
         /// <summary>
         /// 获取或设置进度条下限值
         /// </summary>
@@ -135,6 +142,7 @@ namespace AhDung.WinForm
         public static void BarPerformStep() => UpdateUI<object>(_ => _waitForm.BarPerformStep());
 
         static int _defaultBarStep;
+
         /// <summary>
         /// 获取或设置进度条步进值
         /// </summary>
@@ -151,6 +159,7 @@ namespace AhDung.WinForm
         }
 
         static ProgressBarStyle _defaultBarStyle;
+
         /// <summary>
         /// 获取或设置进度条动画样式
         /// </summary>
@@ -167,6 +176,7 @@ namespace AhDung.WinForm
         }
 
         static int _defaultBarValue;
+
         /// <summary>
         /// 获取或设置进度值
         /// </summary>
@@ -183,6 +193,7 @@ namespace AhDung.WinForm
         }
 
         static bool _defaultBarVisible;
+
         /// <summary>
         /// 获取或设置进度条可见性
         /// </summary>
@@ -199,6 +210,7 @@ namespace AhDung.WinForm
         }
 
         static bool _defaultCanBeCanceled;
+
         /// <summary>
         /// 获取或设置是否可取消任务
         /// </summary>
@@ -215,6 +227,7 @@ namespace AhDung.WinForm
         }
 
         static string _defaultWorkMessage;
+
         /// <summary>
         /// 获取或设置进度描述   
         /// </summary>
@@ -232,232 +245,307 @@ namespace AhDung.WinForm
 
         #endregion
 
-        #region 执行方法
+        #region 执行任务
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体
         /// </summary>
-        public static void Run(Action method) => RunDelegate(method);
+        public static void Run(Action worker) => RunDelegate(worker);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体
         /// </summary>
-        public static void Run<T>(Action<T> method, T arg) => RunDelegate(method, arg);
+        public static void Run<T>(Action<T> worker, T arg) => RunDelegate(worker, arg);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体
         /// </summary>
-        public static void Run<T1, T2>(Action<T1, T2> method, T1 arg1, T2 arg2) => RunDelegate(method, arg1, arg2);
+        public static void Run<T1, T2>(Action<T1, T2> worker, T1 arg1, T2 arg2) => RunDelegate(worker, arg1, arg2);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体
         /// </summary>
-        public static void Run<T1, T2, T3>(Action<T1, T2, T3> method, T1 arg1, T2 arg2, T3 arg3) => RunDelegate(method, arg1, arg2, arg3);
+        public static void Run<T1, T2, T3>(Action<T1, T2, T3> worker, T1 arg1, T2 arg2, T3 arg3) => RunDelegate(worker, arg1, arg2, arg3);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体
         /// </summary>
-        public static void Run<T1, T2, T3, T4>(Action<T1, T2, T3, T4> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunDelegate(method, arg1, arg2, arg3, arg4);
+        public static void Run<T1, T2, T3, T4>(Action<T1, T2, T3, T4> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunDelegate(worker, arg1, arg2, arg3, arg4);
 
         ///// <summary>
-        ///// 执行方法并使用默认等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5>(Action<T1, T2, T3, T4, T5> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunDelegate(method, arg1, arg2, arg3, arg4, arg5);
+        //public static void Run<T1, T2, T3, T4, T5>(Action<T1, T2, T3, T4, T5> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunDelegate(worker, arg1, arg2, arg3, arg4, arg5);
 
         ///// <summary>
-        ///// 执行方法并使用默认等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6>(Action<T1, T2, T3, T4, T5, T6> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6);
+        //public static void Run<T1, T2, T3, T4, T5, T6>(Action<T1, T2, T3, T4, T5, T6> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6);
 
         ///// <summary>
-        ///// 执行方法并使用默认等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Action<T1, T2, T3, T4, T5, T6, T7> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Action<T1, T2, T3, T4, T5, T6, T7> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 
         ///// <summary>
-        ///// 执行方法并使用默认等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Action<T1, T2, T3, T4, T5, T6, T7, T8> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Action<T1, T2, T3, T4, T5, T6, T7, T8> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 
         #endregion
 
-        #region 执行方法+自定义窗体
+        #region 执行任务+自定义窗体
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run(Type typeofWaitForm, Action method) => RunDelegate(typeofWaitForm, method);
+        //public static void Run(Type waitFormType, Action worker) => RunDelegate(waitFormType, worker);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T>(Type typeofWaitForm, Action<T> method, T arg) => RunDelegate(typeofWaitForm, method, arg);
+        //public static void Run<T>(Type waitFormType, Action<T> worker, T arg) => RunDelegate(waitFormType, worker, arg);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2>(Type typeofWaitForm, Action<T1, T2> method, T1 arg1, T2 arg2) => RunDelegate(typeofWaitForm, method, arg1, arg2);
+        //public static void Run<T1, T2>(Type waitFormType, Action<T1, T2> worker, T1 arg1, T2 arg2) => RunDelegate(waitFormType, worker, arg1, arg2);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3>(Type typeofWaitForm, Action<T1, T2, T3> method, T1 arg1, T2 arg2, T3 arg3) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3);
+        //public static void Run<T1, T2, T3>(Type waitFormType, Action<T1, T2, T3> worker, T1 arg1, T2 arg2, T3 arg3) => RunDelegate(waitFormType, worker, arg1, arg2, arg3);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4>(Type typeofWaitForm, Action<T1, T2, T3, T4> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4);
+        //public static void Run<T1, T2, T3, T4>(Type waitFormType, Action<T1, T2, T3, T4> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5>(Type typeofWaitForm, Action<T1, T2, T3, T4, T5> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5);
+        //public static void Run<T1, T2, T3, T4, T5>(Type waitFormType, Action<T1, T2, T3, T4, T5> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6>(Type typeofWaitForm, Action<T1, T2, T3, T4, T5, T6> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6);
+        //public static void Run<T1, T2, T3, T4, T5, T6>(Type waitFormType, Action<T1, T2, T3, T4, T5, T6> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Type typeofWaitForm, Action<T1, T2, T3, T4, T5, T6, T7> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Type waitFormType, Action<T1, T2, T3, T4, T5, T6, T7> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Type typeofWaitForm, Action<T1, T2, T3, T4, T5, T6, T7, T8> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Type waitFormType, Action<T1, T2, T3, T4, T5, T6, T7, T8> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 
         #endregion
 
-        #region 执行方法+有返回
+        #region 执行任务+有返回+可设置初始工作消息
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
         /// </summary>
-        public static TResult Run<TResult>(Func<TResult> method) => (TResult)RunDelegate(method);
+        public static TResult Run<TResult>(string message, Func<TResult> worker) => (TResult)RunDelegate(() => WorkMessage = message, worker);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
         /// </summary>
-        public static TResult Run<T, TResult>(Func<T, TResult> method, T arg) => (TResult)RunDelegate(method, arg);
+        public static TResult Run<T, TResult>(string message, Func<T, TResult> worker, T arg) => (TResult)RunDelegate(() => WorkMessage = message, worker, arg);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
         /// </summary>
-        public static TResult Run<T1, T2, TResult>(Func<T1, T2, TResult> method, T1 arg1, T2 arg2) => (TResult)RunDelegate(method, arg1, arg2);
+        public static TResult Run<T1, T2, TResult>(string message, Func<T1, T2, TResult> worker, T1 arg1, T2 arg2) => (TResult)RunDelegate(() => WorkMessage = message, worker, arg1, arg2);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
         /// </summary>
-        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> method, T1 arg1, T2 arg2, T3 arg3) => (TResult)RunDelegate(method, arg1, arg2, arg3);
+        public static TResult Run<T1, T2, T3, TResult>(string message, Func<T1, T2, T3, TResult> worker, T1 arg1, T2 arg2, T3 arg3) => (TResult)RunDelegate(() => WorkMessage = message, worker, arg1, arg2, arg3);
 
         /// <summary>
-        /// 执行方法并使用默认等候窗体
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
         /// </summary>
-        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => (TResult)RunDelegate(method, arg1, arg2, arg3, arg4);
-
-        ///// <summary>
-        ///// 执行方法并使用默认等候窗体
-        ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => (TResult)RunDelegate(method, arg1, arg2, arg3, arg4, arg5);
-
-        ///// <summary>
-        ///// 执行方法并使用默认等候窗体
-        ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => (TResult)RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6);
-
-        ///// <summary>
-        ///// 执行方法并使用默认等候窗体
-        ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => (TResult)RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-
-        ///// <summary>
-        ///// 执行方法并使用默认等候窗体
-        ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => (TResult)RunDelegate(method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+        public static TResult Run<T1, T2, T3, T4, TResult>(string message, Func<T1, T2, T3, T4, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => (TResult)RunDelegate(() => WorkMessage = message, worker, arg1, arg2, arg3, arg4);
 
         #endregion
 
-        #region 执行方法+有返回+自定义窗体
+        #region 执行任务+可设置初始工作消息
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
+        /// </summary>
+        public static void Run(string message, Action worker) => RunDelegate(() => WorkMessage = message, worker);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
+        /// </summary>
+        public static void Run<T>(string message, Action<T> worker, T arg) => RunDelegate(() => WorkMessage = message, worker, arg);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
+        /// </summary>
+        public static void Run<T1, T2>(string message, Action<T1, T2> worker, T1 arg1, T2 arg2) => RunDelegate(() => WorkMessage = message, worker, arg1, arg2);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
+        /// </summary>
+        public static void Run<T1, T2, T3>(string message, Action<T1, T2, T3> worker, T1 arg1, T2 arg2, T3 arg3) => RunDelegate(() => WorkMessage = message, worker, arg1, arg2, arg3);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体。可设置初始工作消息
+        /// </summary>
+        public static void Run<T1, T2, T3, T4>(string message, Action<T1, T2, T3, T4> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunDelegate(() => WorkMessage = message, worker, arg1, arg2, arg3, arg4);
+
+        #endregion
+
+        #region 执行任务+有返回
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体
+        /// </summary>
+        public static TResult Run<TResult>(Func<TResult> worker) => (TResult)RunDelegate(worker);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体
+        /// </summary>
+        public static TResult Run<T, TResult>(Func<T, TResult> worker, T arg) => (TResult)RunDelegate(worker, arg);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体
+        /// </summary>
+        public static TResult Run<T1, T2, TResult>(Func<T1, T2, TResult> worker, T1 arg1, T2 arg2) => (TResult)RunDelegate(worker, arg1, arg2);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体
+        /// </summary>
+        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> worker, T1 arg1, T2 arg2, T3 arg3) => (TResult)RunDelegate(worker, arg1, arg2, arg3);
+
+        /// <summary>
+        /// 执行任务并显示默认等候窗体
+        /// </summary>
+        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => (TResult)RunDelegate(worker, arg1, arg2, arg3, arg4);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static TResult Run<TResult>(Type typeofWaitForm, Func<TResult> method) => (TResult)RunDelegate(typeofWaitForm, method);
+        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => (TResult)RunDelegate(worker, arg1, arg2, arg3, arg4, arg5);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static TResult Run<T, TResult>(Type typeofWaitForm, Func<T, TResult> method, T arg) => (TResult)RunDelegate(typeofWaitForm, method, arg);
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => (TResult)RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, TResult>(Type typeofWaitForm, Func<T1, T2, TResult> method, T1 arg1, T2 arg2) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2);
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => (TResult)RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示默认等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, TResult>(Type typeofWaitForm, Func<T1, T2, T3, TResult> method, T1 arg1, T2 arg2, T3 arg3) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3);
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => (TResult)RunDelegate(worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+
+        #endregion
+
+        #region 执行任务+有返回+自定义窗体
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, TResult>(Type typeofWaitForm, Func<T1, T2, T3, T4, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4);
+        //public static TResult Run<TResult>(Type waitFormType, Func<TResult> worker) => (TResult)RunDelegate(waitFormType, worker);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Type typeofWaitForm, Func<T1, T2, T3, T4, T5, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5);
+        //public static TResult Run<T, TResult>(Type waitFormType, Func<T, TResult> worker, T arg) => (TResult)RunDelegate(waitFormType, worker, arg);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Type typeofWaitForm, Func<T1, T2, T3, T4, T5, T6, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6);
+        //public static TResult Run<T1, T2, TResult>(Type waitFormType, Func<T1, T2, TResult> worker, T1 arg1, T2 arg2) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Type typeofWaitForm, Func<T1, T2, T3, T4, T5, T6, T7, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+        //public static TResult Run<T1, T2, T3, TResult>(Type waitFormType, Func<T1, T2, T3, TResult> worker, T1 arg1, T2 arg2, T3 arg3) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3);
 
         ///// <summary>
-        ///// 执行方法并使用自定义等候窗体
+        ///// 执行任务并显示自定义等候窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Type typeofWaitForm, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> method, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => (TResult)RunDelegate(typeofWaitForm, method, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+        //public static TResult Run<T1, T2, T3, T4, TResult>(Type waitFormType, Func<T1, T2, T3, T4, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4);
+
+        ///// <summary>
+        ///// 执行任务并显示自定义等候窗体
+        ///// </summary>
+        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Type waitFormType, Func<T1, T2, T3, T4, T5, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5);
+
+        ///// <summary>
+        ///// 执行任务并显示自定义等候窗体
+        ///// </summary>
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Type waitFormType, Func<T1, T2, T3, T4, T5, T6, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6);
+
+        ///// <summary>
+        ///// 执行任务并显示自定义等候窗体
+        ///// </summary>
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Type waitFormType, Func<T1, T2, T3, T4, T5, T6, T7, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+
+        ///// <summary>
+        ///// 执行任务并显示自定义等候窗体
+        ///// </summary>
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Type waitFormType, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => (TResult)RunDelegate(waitFormType, worker, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 
         #endregion
 
         /// <summary>
-        /// 执行委托并使用默认等候窗体
+        /// 执行委托并显示默认等候窗体
         /// </summary>
-        public static object RunDelegate(Delegate del, params object[] args) => RunDelegate(typeof(WaitForm), del, args);
+        public static object RunDelegate(Delegate worker, params object[] args) => RunDelegate(typeof(WaitForm), worker, args);
 
         /// <summary>
-        /// 执行委托并使用自定义等候窗体
+        /// 执行委托并显示自定义等候窗体
         /// </summary>
-        public static object RunDelegate(Type typeofWaitForm, Delegate del, params object[] args)
+        public static object RunDelegate(Type waitFormType, Delegate worker, params object[] args) => RunDelegate(waitFormType, null, worker, args);
+
+        /// <summary>
+        /// 执行委托并显示默认等候窗体。可设置初始状态
+        /// </summary>
+        public static object RunDelegate(Action initializer, Delegate worker, params object[] args) => RunDelegate(typeof(WaitForm), initializer, worker, args);
+
+        /// <summary>
+        /// 执行委托并显示自定义等候窗体
+        /// </summary>
+        /// <param name="waitFormType">等候窗体类型。不可为null</param>
+        /// <param name="stateInitializer">自定义状态初始化器。用于初始化等候窗体控件的值</param>
+        /// <param name="worker">要执行的任务</param>
+        /// <param name="args">任务方法的参数</param>
+        public static object RunDelegate(Type waitFormType, Action stateInitializer, Delegate worker, params object[] args)
         {
-            if (typeofWaitForm == null)
+            if (waitFormType == null)
             {
-                throw new ArgumentNullException(nameof(typeofWaitForm));
+                throw new ArgumentNullException(nameof(waitFormType));
             }
 
-            if (!typeof(IWaitForm).IsAssignableFrom(typeofWaitForm))
+            if (!typeof(IWaitForm).IsAssignableFrom(waitFormType))
             {
-                throw new ArgumentException("typeofWaitForm必须是实现IWaitForm的类型！");
+                throw new ArgumentException($"{nameof(waitFormType)}必须是实现{nameof(IWaitForm)}的类型！");
             }
 
-            if (del == null || del.GetInvocationList().Length != 1)
+            if (worker?.GetInvocationList().Length is not 1)
             {
-                throw new ApplicationException("委托不能为空，且只能绑定1个方法！");
+                throw new ArgumentException("委托不能为空，且只能绑定1个方法！");
             }
 
             //执行任务前初始化状态
             InitializeStates();
 
+            //执行自定义状态初始化器
+            stateInitializer?.Invoke();
+
             //执行任务
-            var task = SimpleTask.Run(del, args);
+            var task = SimpleTask.Run(worker, args);
 
             //先等候任务执行一段时间
             Thread.Sleep(ShowDelay);
@@ -468,7 +556,7 @@ namespace AhDung.WinForm
                 //确保在此期间阻塞来自任务线程的UpdateUI，
                 //任务完成后的后续操作会在窗体成功显示后才会注册，以此确保 创建 > 显示 > 关闭 的顺序
                 CreateAndShowForm(
-                    typeofWaitForm,
+                    waitFormType,
                     () => task.ContinueWith(_ => CloseForm(), SynchronizationContext.Current),
                     () => IsCancellationRequested = true
                 );
@@ -481,31 +569,31 @@ namespace AhDung.WinForm
         /// <summary>
         /// 创建并显示窗体
         /// </summary>
-        /// <param name="typeofWaitForm">等待窗体类型</param>
-        /// <param name="actionOnShown">当窗体显示后的动作</param>
-        /// <param name="actionOnCancellationRequested">当用户请求取消时的动作</param>
-        static void CreateAndShowForm(Type typeofWaitForm, Action actionOnShown, Action actionOnCancellationRequested)
+        /// <param name="waitFormType">等待窗体类型</param>
+        /// <param name="onShown">当窗体显示后的动作</param>
+        /// <param name="onCancellationRequested">当用户请求取消时的动作</param>
+        static void CreateAndShowForm(Type waitFormType, Action onShown, Action onCancellationRequested)
         {
             Monitor.Enter(ThisType);
             IWaitForm form = null;
             try
             {
-                form = (IWaitForm)Activator.CreateInstance(typeofWaitForm);
-                form.BarValue = BarValue; //Value放前面很重要，因为任务可能先确定Max/Min，Value放后面可能触发超出范围异常
-                form.BarMaximum = BarMaximum;
-                form.BarMinimum = BarMinimum;
-                form.BarStep = BarStep;
-                form.BarStyle = BarStyle;
-                form.BarVisible = BarVisible;
+                form                      = (IWaitForm)Activator.CreateInstance(waitFormType);
+                form.BarValue             = BarValue; //Value放前面很重要，因为任务可能先确定Max/Min，Value放后面可能触发超出范围异常
+                form.BarMaximum           = BarMaximum;
+                form.BarMinimum           = BarMinimum;
+                form.BarStep              = BarStep;
+                form.BarStyle             = BarStyle;
+                form.BarVisible           = BarVisible;
                 form.CancelControlVisible = CanBeCanceled;
-                form.WorkMessage = WorkMessage;
+                form.WorkMessage          = WorkMessage;
 
-                form.CancellationRequested += (_, __) => actionOnCancellationRequested?.Invoke();
-                form.Shown += (_, __) =>
+                form.CancellationRequested += (_, _) => onCancellationRequested?.Invoke();
+                form.Shown += (_, _) =>
                 {
                     Monitor.Exit(ThisType);
                     Application.DoEvents();
-                    actionOnShown?.Invoke();
+                    onShown?.Invoke();
                 };
 
                 (_waitForm = form).ShowDialog();
@@ -538,14 +626,14 @@ namespace AhDung.WinForm
         {
             IsCancellationRequested = false;
 
-            _defaultBarMaximum = 100;
-            _defaultBarMinimum = 0;
-            _defaultBarStep = 1;
-            _defaultBarStyle = ProgressBarStyle.Marquee;
-            _defaultBarValue = 0;
-            _defaultBarVisible = true;
+            _defaultBarMaximum    = 100;
+            _defaultBarMinimum    = 0;
+            _defaultBarStep       = 1;
+            _defaultBarStyle      = ProgressBarStyle.Marquee;
+            _defaultBarValue      = 0;
+            _defaultBarVisible    = true;
             _defaultCanBeCanceled = false;
-            _defaultWorkMessage = "正在处理，请稍候...";
+            _defaultWorkMessage   = "正在处理，请稍候...";
         }
 
         /// <summary>
@@ -553,7 +641,7 @@ namespace AhDung.WinForm
         /// </summary>
         private class SimpleTask
         {
-            readonly Delegate _del;
+            readonly Delegate _worker;
             readonly object[] _args;
 
             SimpleTask _continuationTask;
@@ -610,8 +698,8 @@ namespace AhDung.WinForm
 
             private SimpleTask(Delegate del, object[] args = null)
             {
-                _del = del ?? throw new ArgumentNullException(nameof(del));
-                _args = args;
+                _worker = del ?? throw new ArgumentNullException(nameof(del));
+                _args   = args;
             }
 
             /// <summary>
@@ -639,7 +727,7 @@ namespace AhDung.WinForm
                 {
                     try
                     {
-                        Result = _del.DynamicInvoke(_args);
+                        Result = _worker.DynamicInvoke(_args);
                     }
                     catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
                     {
@@ -683,7 +771,7 @@ namespace AhDung.WinForm
                     return Run(continuationAction, new object[] { this }, context);
                 }
 
-                _continuationTask = new SimpleTask(continuationAction, new object[] { this });
+                _continuationTask    = new SimpleTask(continuationAction, new object[] { this });
                 _continuationContext = context;
                 Monitor.Exit(this);
                 return _continuationTask;

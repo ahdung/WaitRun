@@ -15,39 +15,47 @@ namespace AhDung.WinForm
         static CancellationTokenSource _cts;
 
         //指定调度器避免任务运行在UI线程
-        static readonly Lazy<TaskFactory> _taskFactoryLazy = new Lazy<TaskFactory>(() => new TaskFactory(TaskScheduler.Default));
+        static readonly Lazy<TaskFactory> _taskFactoryLazy = new(() => new TaskFactory(TaskScheduler.Default));
+
         /// <summary>
         /// 本类使用的TaskFactory
         /// </summary>
         static TaskFactory TaskFactory => _taskFactoryLazy.Value;
 
-        static TResult RunTask<TResult>(Func<Task<TResult>> taskFunc) => RunTask(typeof(WaitForm), taskFunc);
+        static TResult RunTask<TResult>(Func<Task<TResult>> worker) => RunTask(typeof(WaitForm), null, worker);
 
-        static TResult RunTask<TResult>(Type typeofWaitForm, Func<Task<TResult>> taskFunc) => RunTaskCore<TResult>(typeofWaitForm, taskFunc);
+        static TResult RunTask<TResult>(string message, Func<Task<TResult>> worker) => RunTask(typeof(WaitForm), () => WorkMessage = message, worker);
 
-        static void RunTask(Func<Task> taskFunc) => RunTask(typeof(WaitForm), taskFunc);
+        static TResult RunTask<TResult>(Type waitFormType, Action stateInitializer, Func<Task<TResult>> worker) => RunTaskCore<TResult>(waitFormType, stateInitializer, worker);
 
-        static void RunTask(Type typeofWaitForm, Func<Task> taskFunc) => RunTaskCore<object>(typeofWaitForm, taskFunc);
+        static void RunTask(Func<Task> worker) => RunTask(typeof(WaitForm), null, worker);
 
-        static TResult RunTaskCore<TResult>(Type typeofWaitForm, Func<Task> taskFunc)
+        static void RunTask(string message, Func<Task> worker) => RunTask(typeof(WaitForm), () => WorkMessage = message, worker);
+
+        static void RunTask(Type waitFormType, Action stateInitializer, Func<Task> worker) => RunTaskCore<object>(waitFormType, stateInitializer, worker);
+
+        static TResult RunTaskCore<TResult>(Type waitFormType, Action stateInitializer, Func<Task> worker)
         {
-            if (typeofWaitForm == null)
+            if (waitFormType == null)
             {
-                throw new ArgumentNullException(nameof(typeofWaitForm));
+                throw new ArgumentNullException(nameof(waitFormType));
             }
 
-            if (!typeof(IWaitForm).IsAssignableFrom(typeofWaitForm))
+            if (!typeof(IWaitForm).IsAssignableFrom(waitFormType))
             {
-                throw new ArgumentException("typeofWaitForm必须是实现IWaitForm的类型！");
+                throw new ArgumentException($"{nameof(waitFormType)}必须是实现{nameof(IWaitForm)}的类型！");
             }
 
-            if (taskFunc == null)
+            if (worker == null)
             {
-                throw new ArgumentNullException(nameof(taskFunc));
+                throw new ArgumentNullException(nameof(worker));
             }
 
             //执行任务前初始化状态
             InitializeStates();
+
+            //执行自定义状态初始化器
+            stateInitializer?.Invoke();
 
             //若是接受取消令牌的任务，令取消控件可见
             if (_cts != null)
@@ -56,11 +64,12 @@ namespace AhDung.WinForm
             }
 
             //执行任务
-            //taskFun有可能是Func<Task>，也可能是Func<Task<TResult>>
-            var isTaskT = taskFunc.GetType().GetGenericArguments()[0].IsGenericType;
-            var task = isTaskT
-                ? TaskFactory.StartNew((Func<Task<TResult>>)taskFunc).Unwrap()
-                : TaskFactory.StartNew(taskFunc).Unwrap();
+            //不直接用worker.Invoke()得到Task是考虑worker中可能会有同步阻塞代码，阻塞等候窗体弹出，
+            //所以要将整个worker放到线程跑。worker有可能是Func<Task>，也可能是Func<Task<TResult>>，
+            //传入StartNew的类型决定Unwrap的返回类型，所以这里必须明确类型给StartNew
+            var task = worker is Func<Task<TResult>> copy
+                ? TaskFactory.StartNew(copy).Unwrap()
+                : TaskFactory.StartNew(worker).Unwrap();
 
             //先等候任务执行一段时间
             Thread.Sleep(ShowDelay);
@@ -73,8 +82,8 @@ namespace AhDung.WinForm
                     //确保在此期间阻塞来自任务线程的UpdateUI
                     //任务完成后的后续操作会在窗体成功显示后才会注册，以此确保 创建 > 显示 > 关闭 的顺序
                     CreateAndShowForm(
-                        typeofWaitForm,
-                        () => task.ContinueWith(t => CloseForm(), TaskScheduler.FromCurrentSynchronizationContext()),
+                        waitFormType,
+                        () => task.ContinueWith(_ => CloseForm(), TaskScheduler.FromCurrentSynchronizationContext()),
                         // ReSharper disable once AccessToDisposedClosure
                         () =>
                         {
@@ -96,9 +105,9 @@ namespace AhDung.WinForm
                     throw task.Exception.InnerException;
                 }
 
-                if (isTaskT)
+                if (task is Task<TResult> t)
                 {
-                    return ((Task<TResult>)task).Result;
+                    return t.Result;
                 }
 
                 return default;
@@ -110,299 +119,357 @@ namespace AhDung.WinForm
             }
         }
 
-        #region 运行任务
+        #region 执行任务
 
         /// <summary>
-        /// 运行任务并使用默认等待窗体
+        /// 执行任务并使用默认等候窗体
         /// </summary>
-        public static void Run(Func<Task> taskFunc) => RunTask(taskFunc);
+        public static void Run(Func<Task> worker) => RunTask(worker);
 
         /// <summary>
-        /// 运行任务并使用默认等待窗体
+        /// 执行任务并使用默认等候窗体
         /// </summary>
-        public static void Run<T>(Func<T, Task> taskFunc, T arg) => RunTask(() => taskFunc(arg));
+        public static void Run<T>(Func<T, Task> worker, T arg) => RunTask(() => worker(arg));
 
         /// <summary>
-        /// 运行任务并使用默认等待窗体
+        /// 执行任务并使用默认等候窗体
         /// </summary>
-        public static void Run<T1, T2>(Func<T1, T2, Task> taskFunc, T1 arg1, T2 arg2) => RunTask(() => taskFunc(arg1, arg2));
+        public static void Run<T1, T2>(Func<T1, T2, Task> worker, T1 arg1, T2 arg2) => RunTask(() => worker(arg1, arg2));
 
         /// <summary>
-        /// 运行任务并使用默认等待窗体
+        /// 执行任务并使用默认等候窗体
         /// </summary>
-        public static void Run<T1, T2, T3>(Func<T1, T2, T3, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3) => RunTask(() => taskFunc(arg1, arg2, arg3));
+        public static void Run<T1, T2, T3>(Func<T1, T2, T3, Task> worker, T1 arg1, T2 arg2, T3 arg3) => RunTask(() => worker(arg1, arg2, arg3));
 
         /// <summary>
-        /// 运行任务并使用默认等待窗体
+        /// 执行任务并使用默认等候窗体
         /// </summary>
-        public static void Run<T1, T2, T3, T4>(Func<T1, T2, T3, T4, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4));
+        public static void Run<T1, T2, T3, T4>(Func<T1, T2, T3, T4, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(() => worker(arg1, arg2, arg3, arg4));
 
         ///// <summary>
-        ///// 运行任务并使用默认等待窗体
+        ///// 执行任务并使用默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5>(Func<T1, T2, T3, T4, T5, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5));
+        //public static void Run<T1, T2, T3, T4, T5>(Func<T1, T2, T3, T4, T5, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5));
 
         ///// <summary>
-        ///// 运行任务并使用默认等待窗体
+        ///// 执行任务并使用默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6>(Func<T1, T2, T3, T4, T5, T6, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6));
+        //public static void Run<T1, T2, T3, T4, T5, T6>(Func<T1, T2, T3, T4, T5, T6, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6));
 
         ///// <summary>
-        ///// 运行任务并使用默认等待窗体
+        ///// 执行任务并使用默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Func<T1, T2, T3, T4, T5, T6, T7, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7));
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Func<T1, T2, T3, T4, T5, T6, T7, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7));
 
         ///// <summary>
-        ///// 运行任务并使用默认等待窗体
+        ///// 执行任务并使用默认等候窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Func<T1, T2, T3, T4, T5, T6, T7, T8, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Func<T1, T2, T3, T4, T5, T6, T7, T8, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
 
         #endregion
 
-        #region 运行任务+可取消
+        #region 执行任务+可设置初始工作消息
+
+        /// <summary>
+        /// 执行任务并使用默认等候窗体
+        /// </summary>
+        public static void Run(string message, Func<Task> worker) => RunTask(message, worker);
+
+        /// <summary>
+        /// 执行任务并使用默认等候窗体
+        /// </summary>
+        public static void Run<T>(string message, Func<T, Task> worker, T arg) => RunTask(message, () => worker(arg));
+
+        /// <summary>
+        /// 执行任务并使用默认等候窗体
+        /// </summary>
+        public static void Run<T1, T2>(string message, Func<T1, T2, Task> worker, T1 arg1, T2 arg2) => RunTask(message, () => worker(arg1, arg2));
+
+        /// <summary>
+        /// 执行任务并使用默认等候窗体
+        /// </summary>
+        public static void Run<T1, T2, T3>(string message, Func<T1, T2, T3, Task> worker, T1 arg1, T2 arg2, T3 arg3) => RunTask(message, () => worker(arg1, arg2, arg3));
+
+        /// <summary>
+        /// 执行任务并使用默认等候窗体
+        /// </summary>
+        public static void Run<T1, T2, T3, T4>(string message, Func<T1, T2, T3, T4, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(message, () => worker(arg1, arg2, arg3, arg4));
+
+        #endregion
+
+        #region 执行任务+可取消
 
         /// <summary>
         /// 运行可取消的任务并使用默认等待窗体
         /// </summary>
-        public static void Run(Func<CancellationToken, Task> taskFunc)
+        public static void Run(Func<CancellationToken, Task> worker)
         {
             _cts = new CancellationTokenSource();
-            RunTask(() => taskFunc(_cts.Token));
+            RunTask(() => worker(_cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认等待窗体
         /// </summary>
-        public static void Run<T>(Func<T, CancellationToken, Task> taskFunc, T arg)
+        public static void Run<T>(Func<T, CancellationToken, Task> worker, T arg)
         {
             _cts = new CancellationTokenSource();
-            RunTask(() => taskFunc(arg, _cts.Token));
+            RunTask(() => worker(arg, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认等待窗体
         /// </summary>
-        public static void Run<T1, T2>(Func<T1, T2, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2)
+        public static void Run<T1, T2>(Func<T1, T2, CancellationToken, Task> worker, T1 arg1, T2 arg2)
         {
             _cts = new CancellationTokenSource();
-            RunTask(() => taskFunc(arg1, arg2, _cts.Token));
+            RunTask(() => worker(arg1, arg2, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认等待窗体
         /// </summary>
-        public static void Run<T1, T2, T3>(Func<T1, T2, T3, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3)
+        public static void Run<T1, T2, T3>(Func<T1, T2, T3, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3)
         {
             _cts = new CancellationTokenSource();
-            RunTask(() => taskFunc(arg1, arg2, arg3, _cts.Token));
+            RunTask(() => worker(arg1, arg2, arg3, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认等待窗体
         /// </summary>
-        public static void Run<T1, T2, T3, T4>(Func<T1, T2, T3, T4, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4)
+        public static void Run<T1, T2, T3, T4>(Func<T1, T2, T3, T4, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4)
         {
             _cts = new CancellationTokenSource();
-            RunTask(() => taskFunc(arg1, arg2, arg3, arg4, _cts.Token));
+            RunTask(() => worker(arg1, arg2, arg3, arg4, _cts.Token));
         }
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5>(Func<T1, T2, T3, T4, T5, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
+        //public static void Run<T1, T2, T3, T4, T5>(Func<T1, T2, T3, T4, T5, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
         //{
         //    _cts = new CancellationTokenSource();
-        //    RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, _cts.Token));
+        //    RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6>(Func<T1, T2, T3, T4, T5, T6, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6)
+        //public static void Run<T1, T2, T3, T4, T5, T6>(Func<T1, T2, T3, T4, T5, T6, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6)
         //{
         //    _cts = new CancellationTokenSource();
-        //    RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, _cts.Token));
+        //    RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Func<T1, T2, T3, T4, T5, T6, T7, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7)
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7>(Func<T1, T2, T3, T4, T5, T6, T7, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7)
         //{
         //    _cts = new CancellationTokenSource();
-        //    RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, _cts.Token));
+        //    RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Func<T1, T2, T3, T4, T5, T6, T7, T8, CancellationToken, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8)
+        //public static void Run<T1, T2, T3, T4, T5, T6, T7, T8>(Func<T1, T2, T3, T4, T5, T6, T7, T8, CancellationToken, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8)
         //{
         //    _cts = new CancellationTokenSource();
-        //    RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, _cts.Token));
+        //    RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, _cts.Token));
         //}
 
         #endregion
 
-        #region 运行任务+自定义窗体
+        #region 执行任务+自定义窗体
 
         ///// <summary>
-        ///// 运行任务并使用自定义等待窗体
+        ///// 执行任务并使用自定义等待窗体
         ///// </summary>
-        //public static void Run(Type typeofWaitForm, Func<Task> taskFunc) => RunTask(typeofWaitForm, taskFunc);
+        //public static void Run(Type waitFormType, Func<Task> worker) => RunTask(waitFormType, worker);
 
         ///// <summary>
-        ///// 运行任务并使用自定义等待窗体
+        ///// 执行任务并使用自定义等待窗体
         ///// </summary>
-        //public static void Run<T>(Type typeofWaitForm, Func<T, Task> taskFunc, T arg) => RunTask(typeofWaitForm, () => taskFunc(arg));
+        //public static void Run<T>(Type waitFormType, Func<T, Task> worker, T arg) => RunTask(waitFormType, () => worker(arg));
 
         ///// <summary>
-        ///// 运行任务并使用自定义等待窗体
+        ///// 执行任务并使用自定义等待窗体
         ///// </summary>
-        //public static void Run<T1, T2>(Type typeofWaitForm, Func<T1, T2, Task> taskFunc, T1 arg1, T2 arg2) => RunTask(typeofWaitForm, () => taskFunc(arg1, arg2));
+        //public static void Run<T1, T2>(Type waitFormType, Func<T1, T2, Task> worker, T1 arg1, T2 arg2) => RunTask(waitFormType, () => worker(arg1, arg2));
 
         ///// <summary>
-        ///// 运行任务并使用自定义等待窗体
+        ///// 执行任务并使用自定义等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3>(Type typeofWaitForm, Func<T1, T2, T3, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3) => RunTask(typeofWaitForm, () => taskFunc(arg1, arg2, arg3));
+        //public static void Run<T1, T2, T3>(Type waitFormType, Func<T1, T2, T3, Task> worker, T1 arg1, T2 arg2, T3 arg3) => RunTask(waitFormType, () => worker(arg1, arg2, arg3));
 
         ///// <summary>
-        ///// 运行任务并使用自定义等待窗体
+        ///// 执行任务并使用自定义等待窗体
         ///// </summary>
-        //public static void Run<T1, T2, T3, T4>(Type typeofWaitForm, Func<T1, T2, T3, T4, Task> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(typeofWaitForm, () => taskFunc(arg1, arg2, arg3, arg4));
+        //public static void Run<T1, T2, T3, T4>(Type waitFormType, Func<T1, T2, T3, T4, Task> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(waitFormType, () => worker(arg1, arg2, arg3, arg4));
 
         #endregion
 
-        #region 运行任务+有返回
+        #region 执行任务+有返回
 
         /// <summary>
-        /// 运行任务并使用默认窗体
+        /// 执行任务并使用默认窗体
         /// </summary>
-        public static TResult Run<TResult>(Func<Task<TResult>> taskFunc) => RunTask(taskFunc);
+        public static TResult Run<TResult>(Func<Task<TResult>> worker) => RunTask(worker);
 
         /// <summary>
-        /// 运行任务并使用默认窗体
+        /// 执行任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T, TResult>(Func<T, Task<TResult>> taskFunc, T arg) => RunTask(() => taskFunc(arg));
+        public static TResult Run<T, TResult>(Func<T, Task<TResult>> worker, T arg) => RunTask(() => worker(arg));
 
         /// <summary>
-        /// 运行任务并使用默认窗体
+        /// 执行任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, TResult>(Func<T1, T2, Task<TResult>> taskFunc, T1 arg1, T2 arg2) => RunTask(() => taskFunc(arg1, arg2));
+        public static TResult Run<T1, T2, TResult>(Func<T1, T2, Task<TResult>> worker, T1 arg1, T2 arg2) => RunTask(() => worker(arg1, arg2));
 
         /// <summary>
-        /// 运行任务并使用默认窗体
+        /// 执行任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3) => RunTask(() => taskFunc(arg1, arg2, arg3));
+        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3) => RunTask(() => worker(arg1, arg2, arg3));
 
         /// <summary>
-        /// 运行任务并使用默认窗体
+        /// 执行任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4));
+        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(() => worker(arg1, arg2, arg3, arg4));
 
         ///// <summary>
-        ///// 运行任务并使用默认窗体
+        ///// 执行任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5));
+        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5));
 
         ///// <summary>
-        ///// 运行任务并使用默认窗体
+        ///// 执行任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6));
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6));
 
         ///// <summary>
-        ///// 运行任务并使用默认窗体
+        ///// 执行任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7));
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7));
 
         ///// <summary>
-        ///// 运行任务并使用默认窗体
+        ///// 执行任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
 
         #endregion
 
-        #region 运行任务+有返回+可取消
+        #region 执行任务+有返回+可设置初始工作消息
+
+        /// <summary>
+        /// 执行任务并使用默认窗体
+        /// </summary>
+        public static TResult Run<TResult>(string message, Func<Task<TResult>> worker) => RunTask(message, worker);
+
+        /// <summary>
+        /// 执行任务并使用默认窗体
+        /// </summary>
+        public static TResult Run<T, TResult>(string message, Func<T, Task<TResult>> worker, T arg) => RunTask(message, () => worker(arg));
+
+        /// <summary>
+        /// 执行任务并使用默认窗体
+        /// </summary>
+        public static TResult Run<T1, T2, TResult>(string message, Func<T1, T2, Task<TResult>> worker, T1 arg1, T2 arg2) => RunTask(message, () => worker(arg1, arg2));
+
+        /// <summary>
+        /// 执行任务并使用默认窗体
+        /// </summary>
+        public static TResult Run<T1, T2, T3, TResult>(string message, Func<T1, T2, T3, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3) => RunTask(message, () => worker(arg1, arg2, arg3));
+
+        /// <summary>
+        /// 执行任务并使用默认窗体
+        /// </summary>
+        public static TResult Run<T1, T2, T3, T4, TResult>(string message, Func<T1, T2, T3, T4, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => RunTask(message, () => worker(arg1, arg2, arg3, arg4));
+
+        #endregion
+
+        #region 执行任务+有返回+可取消
 
         /// <summary>
         /// 运行可取消的任务并使用默认窗体
         /// </summary>
-        public static TResult Run<TResult>(Func<CancellationToken, Task<TResult>> taskFunc)
+        public static TResult Run<TResult>(Func<CancellationToken, Task<TResult>> worker)
         {
             _cts = new CancellationTokenSource();
-            return RunTask(() => taskFunc(_cts.Token));
+            return RunTask(() => worker(_cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T, TResult>(Func<T, CancellationToken, Task<TResult>> taskFunc, T arg)
+        public static TResult Run<T, TResult>(Func<T, CancellationToken, Task<TResult>> worker, T arg)
         {
             _cts = new CancellationTokenSource();
-            return RunTask(() => taskFunc(arg, _cts.Token));
+            return RunTask(() => worker(arg, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, TResult>(Func<T1, T2, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2)
+        public static TResult Run<T1, T2, TResult>(Func<T1, T2, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2)
         {
             _cts = new CancellationTokenSource();
-            return RunTask(() => taskFunc(arg1, arg2, _cts.Token));
+            return RunTask(() => worker(arg1, arg2, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3)
+        public static TResult Run<T1, T2, T3, TResult>(Func<T1, T2, T3, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3)
         {
             _cts = new CancellationTokenSource();
-            return RunTask(() => taskFunc(arg1, arg2, arg3, _cts.Token));
+            return RunTask(() => worker(arg1, arg2, arg3, _cts.Token));
         }
 
         /// <summary>
         /// 运行可取消的任务并使用默认窗体
         /// </summary>
-        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4)
+        public static TResult Run<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4)
         {
             _cts = new CancellationTokenSource();
-            return RunTask(() => taskFunc(arg1, arg2, arg3, arg4, _cts.Token));
+            return RunTask(() => worker(arg1, arg2, arg3, arg4, _cts.Token));
         }
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
+        //public static TResult Run<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
         //{
         //    _cts = new CancellationTokenSource();
-        //    return RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, _cts.Token));
+        //    return RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6)
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, TResult>(Func<T1, T2, T3, T4, T5, T6, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6)
         //{
         //    _cts = new CancellationTokenSource();
-        //    return RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, _cts.Token));
+        //    return RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7)
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7)
         //{
         //    _cts = new CancellationTokenSource();
-        //    return RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, _cts.Token));
+        //    return RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, _cts.Token));
         //}
 
         ///// <summary>
         ///// 运行可取消的任务并使用默认窗体
         ///// </summary>
-        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, CancellationToken, Task<TResult>> taskFunc, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8)
+        //public static TResult Run<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(Func<T1, T2, T3, T4, T5, T6, T7, T8, CancellationToken, Task<TResult>> worker, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8)
         //{
         //    _cts = new CancellationTokenSource();
-        //    return RunTask(() => taskFunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, _cts.Token));
+        //    return RunTask(() => worker(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, _cts.Token));
         //}
 
         #endregion
